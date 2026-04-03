@@ -68,17 +68,10 @@ static void N64_InitMI(void)
         | (1 << 9)); /* PI set */
 }
 
-/* -----------------------------------------------------------------------
- * N64_InitRI — RDRAM Interface
- * Set RDRAM timing registers (values from libdragon / common N64 init).
- * --------------------------------------------------------------------- */
-static void N64_InitRI(void)
-{
-    N64_HW_WR(N64_RI_BASE_REG, 0x00, 0x0E);    /* RI_MODE    */
-    N64_HW_WR(N64_RI_BASE_REG, 0x04, 0x40);    /* RI_CONFIG  */
-    N64_HW_WR(N64_RI_BASE_REG, 0x0C, 0x14);    /* RI_SELECT  */
-    N64_HW_WR(N64_RI_BASE_REG, 0x10, 0x63634); /* RI_REFRESH */
-}
+/* N64_InitRI removed — do NOT reinitialize the RDRAM Interface after IPL3.
+ * The HLE IPL3 (SC64 firmware / emulator) sets RI registers correctly.
+ * Writing RI_CONFIG/RI_REFRESH with wrong values instantly corrupts all
+ * RDRAM access, crashing the CPU before a single frame is rendered. */
 
 /* -----------------------------------------------------------------------
  * N64_InitSP — Signal Processor
@@ -133,7 +126,6 @@ extern void N64_InitVI(void);   /* vi.c      */
 extern void N64_InitAI(void);   /* audio.c   */
 extern void N64_InitInput(void);/* input.c   */
 extern void N64_InitFlashRAM(void); /* flashram.c */
-extern void N64_InitMI(void);
 
 /* -----------------------------------------------------------------------
  * N64Main — platform entry point (called from crt0.s)
@@ -171,7 +163,6 @@ void N64Main(void)
      *   9. CPU interrupts — enable last
      * ------------------------------------------------------------------ */
     N64_InitMI();
-    N64_InitRI();
     N64_InitPI();
     N64_InitSP();
     N64_InitVI();
