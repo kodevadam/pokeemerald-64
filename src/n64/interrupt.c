@@ -187,7 +187,7 @@ void N64_DispatchIntr(void)
      * ------------------------------------------------------------------ */
     if (miIntr & MI_INTR_SP) {
         /* Acknowledge SP */
-        N64_HW_WR(N64_SP_BASE_REG, 0x10, 1);   /* SP_STATUS: clear halt */
+        N64_HW_WR(N64_SP_BASE_REG, 0x10, 0x08);   /* SP_STATUS: CLR_INTR (bit3) */
     }
 
     /* ------------------------------------------------------------------

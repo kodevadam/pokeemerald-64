@@ -80,7 +80,7 @@ static void N64_InitMI(void)
 static void N64_InitSP(void)
 {
     /* Set SP_STATUS: halt RSP, clear broke, clear interrupt */
-    N64_HW_WR(N64_SP_BASE_REG, 0x10, 0x0D);   /* halt | clr_broke | clr_intr */
+    N64_HW_WR(N64_SP_BASE_REG, 0x10, 0x0E);   /* SET_HALT(b1)|CLR_BROKE(b2)|CLR_INTR(b3) */
     /* Wait for RSP to halt */
     while (!(N64_HW_RD(N64_SP_BASE_REG, 0x10) & 1))
         ;
