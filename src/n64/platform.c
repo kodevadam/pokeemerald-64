@@ -1,0 +1,285 @@
+/*
+ * src/n64/platform.c
+ *
+ * N64 port — platform initialisation and main entry point
+ *
+ * N64Main() is called from crt0.s after BSS is cleared.
+ * It initialises all N64 hardware subsystems, then calls AgbMain()
+ * which is the original Pokémon Emerald entry point in src/main.c.
+ * AgbMain() never returns.
+ */
+
+#include <string.h>
+#include "global.h"
+#include "n64/asm_defs.h"
+#include "n64/defines.h"
+#include "main.h"
+#include "malloc.h"
+
+/* -----------------------------------------------------------------------
+ * Linker-exported symbols (from n64.ld)
+ * --------------------------------------------------------------------- */
+extern u8  __sw_palette_start[];
+extern u8  __sw_vram_start[];
+extern u8  __sw_oam_start[];
+extern u8  __sw_ioregs_start[];
+extern u8  __heap_start[];
+extern u8  __stack_bottom[];
+extern u8  __fb0_start[];
+extern u8  __fb1_start[];
+extern u8  __bss_start[];
+extern u8  __bss_end[];
+
+/* -----------------------------------------------------------------------
+ * Software hardware buffer pointers (referenced by defines.h macros)
+ * --------------------------------------------------------------------- */
+void *__n64_pltt_buf = NULL;
+void *__n64_vram_buf = NULL;
+void *__n64_oam_buf  = NULL;
+
+/* Software I/O register file */
+u8 gN64IoRegs[N64_IOREGS_SIZE];
+
+/* GBA defines.h global variable stubs */
+struct SoundInfo *__n64_sound_info_ptr = NULL;
+u16               __n64_intr_check     = 0;
+void             *__n64_intr_vector    = NULL;
+
+/* -----------------------------------------------------------------------
+ * N64 hardware register helpers
+ * --------------------------------------------------------------------- */
+#define N64_REG32(base, off) (*(volatile u32 *)((base) + (off)))
+
+/* -----------------------------------------------------------------------
+ * N64_InitMI — Memory Interface
+ * Enable all MI interrupts that we care about.
+ * --------------------------------------------------------------------- */
+static void N64_InitMI(void)
+{
+    /* Set MI mode: clear DP interrupt, set upper mode */
+    N64_REG32(N64_MI_BASE_REG, MI_MODE_REG) = 0x0500;
+
+    /* Enable VI, AI, SI, PI, DP interrupts in MI mask.
+     * MI mask write format: bits 1,3,5,7,9,11 = set mask for SP,SI,AI,VI,PI,DP */
+    N64_REG32(N64_MI_BASE_REG, MI_INTR_MASK_REG) =
+          (1 << 3)   /* SI set */
+        | (1 << 5)   /* AI set */
+        | (1 << 7)   /* VI set */
+        | (1 << 9);  /* PI set */
+}
+
+/* -----------------------------------------------------------------------
+ * N64_InitRI — RDRAM Interface
+ * Set RDRAM timing registers (values from libdragon / common N64 init).
+ * --------------------------------------------------------------------- */
+static void N64_InitRI(void)
+{
+    N64_REG32(N64_RI_BASE_REG, 0x00) = 0x0E;   /* RI_MODE    */
+    N64_REG32(N64_RI_BASE_REG, 0x04) = 0x40;   /* RI_CONFIG  */
+    N64_REG32(N64_RI_BASE_REG, 0x0C) = 0x14;   /* RI_SELECT  */
+    N64_REG32(N64_RI_BASE_REG, 0x10) = 0x63634;/* RI_REFRESH */
+}
+
+/* -----------------------------------------------------------------------
+ * N64_InitSP — Signal Processor
+ * Halt the RSP; we do not use it for custom microcode in this port.
+ * --------------------------------------------------------------------- */
+static void N64_InitSP(void)
+{
+    /* Set SP_STATUS: halt RSP, clear broke, clear interrupt */
+    N64_REG32(N64_SP_BASE_REG, 0x10) = 0x0D;  /* halt | clr_broke | clr_intr */
+    /* Wait for RSP to halt */
+    while (!(N64_REG32(N64_SP_BASE_REG, 0x10) & 1))
+        ;
+}
+
+/* -----------------------------------------------------------------------
+ * N64_InitPI — Peripheral Interface (cartridge bus)
+ * Standard bus timing values for commercial N64 carts.
+ * --------------------------------------------------------------------- */
+static void N64_InitPI(void)
+{
+    N64_REG32(N64_PI_BASE_REG, PI_STATUS_REG)       = 3;  /* clear DMA busy/error */
+    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM1_LAT_REG) = 0x40;
+    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM1_PWD_REG) = 0x12;
+    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM1_PGS_REG) = 0x07;
+    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM1_RLS_REG) = 0x03;
+    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM2_LAT_REG) = 0x05;  /* FlashRAM domain */
+    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM2_PWD_REG) = 0x0C;
+    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM2_PGS_REG) = 0x02;
+    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM2_RLS_REG) = 0x02;
+}
+
+/* -----------------------------------------------------------------------
+ * N64_EnableCPUInterrupts — turn on MIPS interrupt handling
+ * --------------------------------------------------------------------- */
+static void N64_EnableCPUInterrupts(void)
+{
+    /* CP0 Status: set IE (global enable) and IM2 (RCP interrupt mask) */
+    u32 sr;
+    asm volatile (
+        "mfc0  %0, $12\n\t"
+        "ori   %0, %0, 0x0401\n\t"   /* IE=1, IM2=1 */
+        "and   %0, %0, ~0x6\n\t"     /* clear EXL, ERL */
+        "mtc0  %0, $12\n\t"
+        : "=r"(sr)
+    );
+}
+
+/* -----------------------------------------------------------------------
+ * Forward declarations for subsystems
+ * --------------------------------------------------------------------- */
+extern void N64_InitVI(void);   /* vi.c      */
+extern void N64_InitAI(void);   /* audio.c   */
+extern void N64_InitInput(void);/* input.c   */
+extern void N64_InitFlashRAM(void); /* flashram.c */
+extern void N64_InitMI(void);
+
+/* -----------------------------------------------------------------------
+ * N64Main — platform entry point (called from crt0.s)
+ * --------------------------------------------------------------------- */
+void N64Main(void)
+{
+    /* ------------------------------------------------------------------
+     * Point software hardware buffers at linker-allocated RDRAM regions
+     * ------------------------------------------------------------------ */
+    __n64_pltt_buf = __sw_palette_start;
+    __n64_vram_buf = __sw_vram_start;
+    __n64_oam_buf  = __sw_oam_start;
+
+    /* Clear all software buffers */
+    memset(__n64_pltt_buf, 0, 0x400);
+    memset(__n64_vram_buf, 0, 0x18000);
+    memset(__n64_oam_buf,  0, 0x400);
+    memset(gN64IoRegs,     0, sizeof(gN64IoRegs));
+
+    /* ------------------------------------------------------------------
+     * Hardware initialisation — order matters:
+     *   1. MI (interrupt controller) first so sub-systems can register
+     *   2. RI (RDRAM interface)
+     *   3. PI (cartridge bus) — needed for flash save init
+     *   4. SP (halt RSP)
+     *   5. VI (video) — sets up framebuffers and VI registers
+     *   6. AI (audio) — sets up AI DMA and sample rate
+     *   7. Input (SI) — initiates first controller poll
+     *   8. FlashRAM — detects save media
+     *   9. CPU interrupts — enable last
+     * ------------------------------------------------------------------ */
+    N64_InitMI();
+    N64_InitRI();
+    N64_InitPI();
+    N64_InitSP();
+    N64_InitVI();
+    N64_InitAI();
+    N64_InitInput();
+    N64_InitFlashRAM();
+    N64_EnableCPUInterrupts();
+
+    /* ------------------------------------------------------------------
+     * Hand off to the game's main function.
+     * AgbMain() contains the game loop and never returns.
+     * ------------------------------------------------------------------ */
+    AgbMain();
+
+    /* Should never reach here */
+    for (;;)
+        ;
+}
+
+/* -----------------------------------------------------------------------
+ * N64_DmaSet — called by the DmaSet macro in macro.h
+ *
+ * For DMA channels 0-2 (used by M4A and the graphics engine for small
+ * immediate transfers), execute synchronously via memcpy/memset.
+ * For DMA channel 3 (the game's async VRAM DMA manager), store the
+ * request in a pending-request queue and process it during VBlank.
+ * --------------------------------------------------------------------- */
+
+#define DMA3_QUEUE_SIZE 64
+
+typedef struct {
+    const void *src;
+    void       *dst;
+    u32         control;
+} Dma3Request;
+
+static Dma3Request sDma3Queue[DMA3_QUEUE_SIZE];
+static volatile int sDma3Head = 0;
+static volatile int sDma3Tail = 0;
+
+void N64_DmaSet(int dmaNum, const void *src, void *dst, u32 control)
+{
+    u32 ctrl   = control >> 16;
+    u32 count  = control & 0xFFFF;
+    int is32   = (ctrl & DMA_32BIT) != 0;
+    int fixed  = (ctrl & DMA_SRC_FIXED) != 0;
+    u32 bytes  = count * (is32 ? 4 : 2);
+
+    if (dmaNum == 3) {
+        /* Queue for VBlank processing */
+        int next = (sDma3Head + 1) % DMA3_QUEUE_SIZE;
+        if (next != sDma3Tail) {
+            sDma3Queue[sDma3Head].src     = src;
+            sDma3Queue[sDma3Head].dst     = dst;
+            sDma3Queue[sDma3Head].control = control;
+            sDma3Head = next;
+        }
+        return;
+    }
+
+    /* Immediate execution for DMA0-2 */
+    if (!(ctrl & DMA_ENABLE))
+        return;
+
+    if (fixed) {
+        if (is32) {
+            u32 val = *(const u32 *)src;
+            u32 *d = (u32 *)dst;
+            for (u32 i = 0; i < count; i++) *d++ = val;
+        } else {
+            u16 val = *(const u16 *)src;
+            u16 *d = (u16 *)dst;
+            for (u32 i = 0; i < count; i++) *d++ = val;
+        }
+    } else {
+        memcpy(dst, src, bytes);
+    }
+}
+
+/* ProcessDma3Requests — called from VBlank handler (replaces ProcessDma3Requests
+ * in src/dma3_manager.c; the original is excluded from the N64 build) */
+void ProcessDma3Requests(void)
+{
+    while (sDma3Tail != sDma3Head) {
+        Dma3Request *req = &sDma3Queue[sDma3Tail];
+        u32 ctrl  = req->control >> 16;
+        u32 count = req->control & 0xFFFF;
+        int is32  = (ctrl & DMA_32BIT) != 0;
+        int fixed = (ctrl & DMA_SRC_FIXED) != 0;
+        u32 bytes = count * (is32 ? 4 : 2);
+
+        if (ctrl & DMA_ENABLE) {
+            if (fixed) {
+                if (is32) {
+                    u32 val = *(const u32 *)req->src;
+                    u32 *d = (u32 *)req->dst;
+                    for (u32 i = 0; i < count; i++) *d++ = val;
+                } else {
+                    u16 val = *(const u16 *)req->src;
+                    u16 *d = (u16 *)req->dst;
+                    for (u32 i = 0; i < count; i++) *d++ = val;
+                }
+            } else {
+                memcpy(req->dst, req->src, bytes);
+            }
+        }
+
+        sDma3Tail = (sDma3Tail + 1) % DMA3_QUEUE_SIZE;
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * Stubs for PI / AI done callbacks referenced in interrupt.c
+ * (full implementations are in flashram.c and audio.c)
+ * --------------------------------------------------------------------- */
+__attribute__((weak)) void N64_PiDmaDone(void) {}

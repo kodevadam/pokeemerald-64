@@ -4,7 +4,11 @@
 #include <string.h>
 #include <limits.h>
 #include "config.h" // we need to define config before gba headers as print stuff needs the functions nulled before defines.
+#if defined(N64_PORT) && N64_PORT
+#include "n64/n64.h"
+#else
 #include "gba/gba.h"
+#endif
 #include "gametypes.h"
 #include "constants/global.h"
 #include "constants/flags.h"
