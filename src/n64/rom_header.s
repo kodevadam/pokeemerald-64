@@ -37,24 +37,24 @@
     .byte   0x12        /* PI_BSD_DOM1_PGS_REG */
     .byte   0x40        /* PI_BSD_DOM1_RLS_REG */
 
-    /* Clock rate (0 = default 93.75 MHz) */
-    .word   0x000F0000
+    /* Clock rate (0 = default 93.75 MHz) — stored big-endian for IPL3 */
+    .byte   0x00, 0x0F, 0x00, 0x00
 
-    /* Entry point in RDRAM (virtual, KSEG0 = 0x80xxxxxx) */
-    .word   0x80000400
+    /* Entry point in RDRAM (KSEG0 0x80000400) — big-endian for IPL3 */
+    .byte   0x80, 0x00, 0x04, 0x00
 
     /* Release / OS version */
-    .word   0x00000000
+    .byte   0x00, 0x00, 0x00, 0x00
 
     /* CRC1 — placeholder (filled by chksum64) */
-    .word   0x00000000
+    .byte   0x00, 0x00, 0x00, 0x00
 
     /* CRC2 — placeholder (filled by chksum64) */
-    .word   0x00000000
+    .byte   0x00, 0x00, 0x00, 0x00
 
     /* Reserved */
-    .word   0x00000000
-    .word   0x00000000
+    .byte   0x00, 0x00, 0x00, 0x00
+    .byte   0x00, 0x00, 0x00, 0x00
 
     /* Game title: "POKEMON EMERALD64" padded to 20 bytes */
     .ascii  "POKEMON EMERALD64   "

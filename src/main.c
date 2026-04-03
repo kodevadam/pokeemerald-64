@@ -444,6 +444,8 @@ void DoSoftReset(void)
 #if !defined(N64_PORT) || !N64_PORT
     SiiRtcProtect();
     SoftReset(RESET_ALL);
+#else
+    SoftReset(RESET_ALL);
 #endif
 }
 

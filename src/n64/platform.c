@@ -153,6 +153,11 @@ void N64Main(void)
     memset(__n64_oam_buf,  0, 0x400);
     memset(gN64IoRegs,     0, sizeof(gN64IoRegs));
 
+    /* REG_KEYINPUT (0x130) is active-LOW: all bits set = no keys pressed.
+     * The zero-init above sets it to 0x0000 (all keys "pressed"), which
+     * would cause ReadKeys() to see spurious button presses at startup. */
+    *(u16 *)(gN64IoRegs + 0x130) = 0x03FF;
+
     /* ------------------------------------------------------------------
      * Hardware initialisation — order matters:
      *   1. MI (interrupt controller) first so sub-systems can register
