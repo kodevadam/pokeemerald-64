@@ -46,9 +46,9 @@ u16               __n64_intr_check     = 0;
 void             *__n64_intr_vector    = NULL;
 
 /* -----------------------------------------------------------------------
- * N64 hardware register helpers
+ * N64 hardware register helpers — byte-swap wrappers for big-endian MMIO
  * --------------------------------------------------------------------- */
-#define N64_REG32(base, off) (*(volatile u32 *)((base) + (off)))
+/* N64_HW_RD / N64_HW_WR are defined in n64/asm_defs.h */
 
 /* -----------------------------------------------------------------------
  * N64_InitMI — Memory Interface
@@ -57,15 +57,15 @@ void             *__n64_intr_vector    = NULL;
 static void N64_InitMI(void)
 {
     /* Set MI mode: clear DP interrupt, set upper mode */
-    N64_REG32(N64_MI_BASE_REG, MI_MODE_REG) = 0x0500;
+    N64_HW_WR(N64_MI_BASE_REG, MI_MODE_REG, 0x0500);
 
     /* Enable VI, AI, SI, PI, DP interrupts in MI mask.
      * MI mask write format: bits 1,3,5,7,9,11 = set mask for SP,SI,AI,VI,PI,DP */
-    N64_REG32(N64_MI_BASE_REG, MI_INTR_MASK_REG) =
+    N64_HW_WR(N64_MI_BASE_REG, MI_INTR_MASK_REG,
           (1 << 3)   /* SI set */
         | (1 << 5)   /* AI set */
         | (1 << 7)   /* VI set */
-        | (1 << 9);  /* PI set */
+        | (1 << 9)); /* PI set */
 }
 
 /* -----------------------------------------------------------------------
@@ -74,10 +74,10 @@ static void N64_InitMI(void)
  * --------------------------------------------------------------------- */
 static void N64_InitRI(void)
 {
-    N64_REG32(N64_RI_BASE_REG, 0x00) = 0x0E;   /* RI_MODE    */
-    N64_REG32(N64_RI_BASE_REG, 0x04) = 0x40;   /* RI_CONFIG  */
-    N64_REG32(N64_RI_BASE_REG, 0x0C) = 0x14;   /* RI_SELECT  */
-    N64_REG32(N64_RI_BASE_REG, 0x10) = 0x63634;/* RI_REFRESH */
+    N64_HW_WR(N64_RI_BASE_REG, 0x00, 0x0E);    /* RI_MODE    */
+    N64_HW_WR(N64_RI_BASE_REG, 0x04, 0x40);    /* RI_CONFIG  */
+    N64_HW_WR(N64_RI_BASE_REG, 0x0C, 0x14);    /* RI_SELECT  */
+    N64_HW_WR(N64_RI_BASE_REG, 0x10, 0x63634); /* RI_REFRESH */
 }
 
 /* -----------------------------------------------------------------------
@@ -87,9 +87,9 @@ static void N64_InitRI(void)
 static void N64_InitSP(void)
 {
     /* Set SP_STATUS: halt RSP, clear broke, clear interrupt */
-    N64_REG32(N64_SP_BASE_REG, 0x10) = 0x0D;  /* halt | clr_broke | clr_intr */
+    N64_HW_WR(N64_SP_BASE_REG, 0x10, 0x0D);   /* halt | clr_broke | clr_intr */
     /* Wait for RSP to halt */
-    while (!(N64_REG32(N64_SP_BASE_REG, 0x10) & 1))
+    while (!(N64_HW_RD(N64_SP_BASE_REG, 0x10) & 1))
         ;
 }
 
@@ -99,15 +99,15 @@ static void N64_InitSP(void)
  * --------------------------------------------------------------------- */
 static void N64_InitPI(void)
 {
-    N64_REG32(N64_PI_BASE_REG, PI_STATUS_REG)       = 3;  /* clear DMA busy/error */
-    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM1_LAT_REG) = 0x40;
-    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM1_PWD_REG) = 0x12;
-    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM1_PGS_REG) = 0x07;
-    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM1_RLS_REG) = 0x03;
-    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM2_LAT_REG) = 0x05;  /* FlashRAM domain */
-    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM2_PWD_REG) = 0x0C;
-    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM2_PGS_REG) = 0x02;
-    N64_REG32(N64_PI_BASE_REG, PI_BSD_DOM2_RLS_REG) = 0x02;
+    N64_HW_WR(N64_PI_BASE_REG, PI_STATUS_REG,       3);     /* clear DMA busy/error */
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_LAT_REG, 0x40);
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_PWD_REG, 0x12);
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_PGS_REG, 0x07);
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_RLS_REG, 0x03);
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_LAT_REG, 0x05);  /* FlashRAM domain */
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_PWD_REG, 0x0C);
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_PGS_REG, 0x02);
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_RLS_REG, 0x02);
 }
 
 /* -----------------------------------------------------------------------

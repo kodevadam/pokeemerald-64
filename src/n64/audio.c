@@ -37,9 +37,10 @@
 #include "n64/asm_defs.h"
 
 /* -----------------------------------------------------------------------
- * N64 AI register access
+ * N64 AI register access — byte-swap wrappers for big-endian MMIO
  * --------------------------------------------------------------------- */
-#define AI_REG(off) (*(volatile u32 *)(N64_AI_BASE_REG + (off)))
+#define AI_REG_WR(off, val) N64_HW_WR(N64_AI_BASE_REG, (off), (val))
+#define AI_REG_RD(off)      N64_HW_RD(N64_AI_BASE_REG, (off))
 
 /* -----------------------------------------------------------------------
  * Audio buffer configuration
@@ -354,17 +355,17 @@ void N64_InitAI(void)
      * NTSC AI clock = 48681812 Hz
      * For 32000 Hz: 48681812 / 32000 - 1 ≈ 1521 */
     u32 dacRate = (48681812 / N64_AUDIO_SAMPLE_RATE) - 1;
-    AI_REG(AI_DACRATE_REG)  = dacRate;
-    AI_REG(AI_BITRATE_REG)  = 15;        /* 16-bit */
-    AI_REG(AI_CONTROL_REG)  = 1;         /* DMA enable */
+    AI_REG_WR(AI_DACRATE_REG, dacRate);
+    AI_REG_WR(AI_BITRATE_REG, 15);       /* 16-bit */
+    AI_REG_WR(AI_CONTROL_REG, 1);        /* DMA enable */
 
     /* Pre-fill first buffer (silence) */
     MixAudioFrame(sAudioBufs[sPlayBuf], N64_AUDIO_SAMPLES_PER_BUF);
 
     /* Start playing the first buffer */
     u32 physAddr = (u32)((uintptr_t)sAudioBufs[sPlayBuf] & 0x0FFFFFFF);
-    AI_REG(AI_DRAM_ADDR_REG) = physAddr;
-    AI_REG(AI_LEN_REG)       = N64_AUDIO_BUF_BYTES;
+    AI_REG_WR(AI_DRAM_ADDR_REG, physAddr);
+    AI_REG_WR(AI_LEN_REG,       N64_AUDIO_BUF_BYTES);
     sAIBusy = 1;
 }
 
@@ -375,8 +376,8 @@ void N64_AudioRefill(void)
 {
     /* Queue the fill buffer for playback */
     u32 physAddr = (u32)((uintptr_t)sAudioBufs[sFillBuf] & 0x0FFFFFFF);
-    AI_REG(AI_DRAM_ADDR_REG) = physAddr;
-    AI_REG(AI_LEN_REG)       = N64_AUDIO_BUF_BYTES;
+    AI_REG_WR(AI_DRAM_ADDR_REG, physAddr);
+    AI_REG_WR(AI_LEN_REG,       N64_AUDIO_BUF_BYTES);
 
     /* Swap buffers */
     int tmp  = sFillBuf;
@@ -400,8 +401,8 @@ void m4aSoundVSync(void)
     if (!sAIBusy) {
         MixAudioFrame(sAudioBufs[sFillBuf], N64_AUDIO_SAMPLES_PER_BUF);
         u32 physAddr = (u32)((uintptr_t)sAudioBufs[sFillBuf] & 0x0FFFFFFF);
-        AI_REG(AI_DRAM_ADDR_REG) = physAddr;
-        AI_REG(AI_LEN_REG)       = N64_AUDIO_BUF_BYTES;
+        AI_REG_WR(AI_DRAM_ADDR_REG, physAddr);
+        AI_REG_WR(AI_LEN_REG,       N64_AUDIO_BUF_BYTES);
         sAIBusy = 1;
     }
 }
@@ -412,7 +413,7 @@ void m4aSoundVSync(void)
  * --------------------------------------------------------------------- */
 void m4aSoundVSyncOff(void)
 {
-    AI_REG(AI_CONTROL_REG) = 0;   /* disable DMA */
+    AI_REG_WR(AI_CONTROL_REG, 0); /* disable DMA */
     sAIBusy = 0;
 }
 

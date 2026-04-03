@@ -1,97 +1,104 @@
 # ============================================================
 #  Makefile.n64  —  pokeemerald N64 port build system
-#  Target: Nintendo 64 (.z64 big-endian ROM)
-#  Toolchain: mips64-elf-* (or mips-linux-gnu-*)
-#  SDK: libdragon (https://github.com/DragonMinded/libdragon)
+#  Target: Nintendo 64 (.v64 byte-swapped ROM, little-endian MIPS)
+#  Toolchain: mipsel-linux-gnu-gcc (little-endian MIPS, bare-metal)
+#
+#  Why little-endian MIPS?
+#    The GBA is little-endian.  All game data (palettes, tilemaps,
+#    compressed data) is stored in little-endian byte order.
+#    Compiling as little-endian MIPS means all struct layouts, u16/u32
+#    reads from ROM data, and save data are correct without byte-swapping.
+#    The N64 hardware registers (VI, AI, SI, PI, MI) are always big-endian
+#    regardless of CPU mode; our HAL wraps those with N64_MMIO_RD/WR macros.
 # ============================================================
 
 # ---------- Basic configuration ----------------------------
 FILE_NAME  := pokeemerald64
 BUILD_DIR  := build/n64
-ROM_NAME   := $(FILE_NAME).z64
+ROM_NAME   := $(FILE_NAME).v64
 ELF_NAME   := $(FILE_NAME).elf
 MAP_NAME   := $(FILE_NAME).map
 
-# libdragon root — set via environment or override on command line
-# e.g.  make -f Makefile.n64 LIBDRAGON=/opt/libdragon
-LIBDRAGON  ?= /opt/libdragon
-
-# ---------- Toolchain -------------------------------------
-# Prefer the libdragon-bundled toolchain, fall back to system mips64-elf-*
-ifneq ($(wildcard $(LIBDRAGON)/bin),)
-  export PATH := $(LIBDRAGON)/bin:$(PATH)
-  PREFIX := mips64-elf-
-else
-  PREFIX := mips64-elf-
-endif
+# ---------- Toolchain (mipsel = little-endian MIPS) -------
+PREFIX := mipsel-linux-gnu-
 
 CC      := $(PREFIX)gcc
-CXX     := $(PREFIX)g++
 AS      := $(PREFIX)as
 LD      := $(PREFIX)ld
 OBJCOPY := $(PREFIX)objcopy
 OBJDUMP := $(PREFIX)objdump
 NM      := $(PREFIX)nm
-AR      := $(PREFIX)ar
 SIZE    := $(PREFIX)size
 
-# Post-processing tool to fix N64 ROM checksum
-N64CHECKSUM := $(LIBDRAGON)/tools/n64tool
-CHKSUM64    := chksum64   # fallback if n64tool not available
+# ROM CRC fixer — build our own if not present
+CHKSUM64 := $(BUILD_DIR)/tools/n64crc
+CHKSUM64_SRC := tools/n64crc.c
 
 # ---------- Compiler flags --------------------------------
-ARCH_FLAGS := -march=vr4300 -mtune=vr4300 -mabi=32
+# -mips3       : MIPS III ISA  (VR4300 supports MIPS III)
+# -mabi=32     : 32-bit ABI    (o32, avoids 64-bit ABI surprises)
+# -EL          : little-endian output (implicit in mipsel- prefix, explicit here)
+# -G0          : no small-data section (gp-relative addressing off — we have no gp)
+# -mno-abicalls: no PIC, direct calls (bare-metal)
+# -fno-pic     : no position-independent code
+ARCH_FLAGS := -mips3 -mabi=32 -EL -G0 -mno-abicalls -fno-pic
 
-# Use MIPS III ISA (vr4300 is a 64-bit CPU but we target the 32-bit ABI
-# to match libdragon conventions and avoid ABI headaches)
-CFLAGS := $(ARCH_FLAGS) \
-           -O2 \
-           -G0 \
-           -ffunction-sections \
-           -fdata-sections \
-           -Wall \
-           -Wno-unused-function \
-           -DN64_PORT=1 \
-           -DMODERN=1 \
-           -DNDEBUG \
-           -I include \
-           -I include/n64 \
-           -I $(LIBDRAGON)/include
+CFLAGS := $(ARCH_FLAGS)                \
+           -O2                         \
+           -ffunction-sections         \
+           -fdata-sections             \
+           -fno-strict-aliasing        \
+           -ffreestanding              \
+           -Wall                       \
+           -Wno-unused-function        \
+           -Wno-unused-variable        \
+           -Wno-unused-but-set-variable \
+           -Wno-sign-compare           \
+           -Wno-type-limits            \
+           -Wno-address                \
+           -Wno-array-bounds           \
+           -Wno-missing-braces         \
+           -Wno-discarded-qualifiers   \
+           -Wno-incompatible-pointer-types \
+           -DN64_PORT=1                \
+           -DMODERN=1                  \
+           -DNDEBUG                    \
+           -DBUGFIX                    \
+           -I include                  \
+           -I include/n64
 
-ASFLAGS := $(ARCH_FLAGS) -I include -I include/n64
+ASFLAGS := $(ARCH_FLAGS) -EL -I include -I include/n64
 
-LDFLAGS := -T n64.ld \
+LDFLAGS := -T n64.ld                   \
             -Map $(BUILD_DIR)/$(MAP_NAME) \
-            --gc-sections \
-            -L $(LIBDRAGON)/lib \
-            -ldragon \
-            -lc \
-            -lm \
-            -ldragonsys
+            --gc-sections              \
+            -nostdlib                  \
+            -static
 
 # ---------- Source files ----------------------------------
 
 # N64 platform sources (new files replacing GBA HAL)
 N64_SRCS := \
-    src/n64/crt0.s         \
-    src/n64/platform.c     \
-    src/n64/interrupt.c    \
-    src/n64/bios.c         \
-    src/n64/vi.c           \
-    src/n64/tile_renderer.c \
-    src/n64/sprite_renderer.c \
-    src/n64/audio.c        \
-    src/n64/input.c        \
-    src/n64/flashram.c     \
-    src/n64/dma3_stub.c    \
-    src/n64/gpu_regs_n64.c \
-    src/n64/rtc_stub.c     \
-    src/n64/link_stub.c    \
+    src/n64/crt0.s              \
+    src/n64/platform.c          \
+    src/n64/interrupt.c         \
+    src/n64/bios.c              \
+    src/n64/vi.c                \
+    src/n64/tile_renderer.c     \
+    src/n64/sprite_renderer.c   \
+    src/n64/audio.c             \
+    src/n64/input.c             \
+    src/n64/flashram.c          \
+    src/n64/dma3_stub.c         \
+    src/n64/gpu_regs_n64.c      \
+    src/n64/rtc_stub.c          \
+    src/n64/link_stub.c         \
     src/n64/scanline_effect_n64.c \
-    src/n64/rom_header.s
+    src/n64/rom_header.s        \
+    src/n64/libc_impl.c
 
 # Game sources — everything in src/ except files we replace
-# Exclude GBA-specific hardware files that are superseded by N64 equivalents
+# Exclude GBA-specific hardware files superseded by N64 equivalents
 EXCLUDED_SRCS := \
     src/m4a_1.s            \
     src/crt0.s             \
@@ -134,38 +141,40 @@ ASM_OBJS := $(patsubst %.s,   $(BUILD_DIR)/%.o, $(ASM_SRCS))
 ALL_OBJS := $(C_OBJS) $(ASM_OBJS)
 
 # ---------- Build rules -----------------------------------
-.PHONY: all clean rom
+.PHONY: all clean rom crc-tool
 
 all: rom
 
-rom: $(BUILD_DIR)/$(ROM_NAME)
+rom: crc-tool $(BUILD_DIR)/$(ROM_NAME)
 
-# Byte-swap the ELF into a big-endian .z64 and fix CRC
+# Build the N64 CRC fixer tool (host native, not MIPS)
+crc-tool: $(CHKSUM64)
+$(CHKSUM64): $(CHKSUM64_SRC)
+	@mkdir -p $(dir $@)
+	gcc -O2 -o $@ $<
+
+# Link ELF then extract raw binary for ROM
 $(BUILD_DIR)/$(ROM_NAME): $(BUILD_DIR)/$(ELF_NAME)
 	$(OBJCOPY) -O binary $< $@
-	@# Pad to minimum 1MB (N64 ROMs must be at least 1MB)
+	@# Pad to minimum 1 MB
 	@SIZE=$$(wc -c < $@); \
-	 if [ $$SIZE -lt 1048576 ]; then \
-	   dd if=/dev/zero bs=1 count=$$((1048576 - $$SIZE)) >> $@ 2>/dev/null; \
+	 PAD=$$((1048576 - $$SIZE)); \
+	 if [ $$PAD -gt 0 ]; then \
+	   dd if=/dev/zero bs=1 count=$$PAD >> $@ 2>/dev/null; \
 	 fi
-	@# Fix CRC checksums in the ROM header
-	@if command -v $(CHKSUM64) >/dev/null 2>&1; then \
-	   $(CHKSUM64) $@; \
-	   echo "CRC fixed: $@"; \
-	 else \
-	   echo "WARNING: chksum64 not found, ROM CRC not fixed (emulators may reject it)"; \
-	 fi
-	@echo "Built: $@"
+	@# Fix ROM CRC checksums
+	$(CHKSUM64) $@
+	@echo "ROM built: $@ ($$(wc -c < $@) bytes)"
 
 $(BUILD_DIR)/$(ELF_NAME): $(ALL_OBJS)
 	@mkdir -p $(dir $@)
 	$(LD) $(ALL_OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@
 
-# Compile C
+# Compile C (with dependency generation)
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 # Assemble .s
 $(BUILD_DIR)/%.o: %.s
@@ -175,10 +184,12 @@ $(BUILD_DIR)/%.o: %.s
 clean:
 	rm -rf $(BUILD_DIR)
 
+# Include generated dependency files
+-include $(C_OBJS:.o=.d)
+
 # Convenience targets
 disasm: $(BUILD_DIR)/$(ELF_NAME)
 	$(OBJDUMP) -d -M no-aliases $< > $(BUILD_DIR)/$(FILE_NAME).dis
 
-# Show section sizes
 sizes: $(BUILD_DIR)/$(ELF_NAME)
-	$(NM) --size-sort --print-size $<
+	$(NM) --size-sort --print-size $< | head -40

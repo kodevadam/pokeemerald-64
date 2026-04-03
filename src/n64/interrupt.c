@@ -31,16 +31,12 @@ extern void N64_RtcVBlankTick(void);
 
 /* -----------------------------------------------------------------------
  * N64 hardware register access helpers
- * All N64 MMIO registers are 32-bit, memory-mapped at KSEG1 (uncached).
+ * All N64 MMIO registers are 32-bit, big-endian; use byte-swap wrappers.
  * --------------------------------------------------------------------- */
-#define N64_REG32(base, offset) (*(volatile u32 *)((base) + (offset)))
-
-#define MI_INTR_MASK    N64_REG32(N64_MI_BASE_REG, MI_INTR_MASK_REG)
-#define MI_INTR         N64_REG32(N64_MI_BASE_REG, MI_INTR_REG)
-#define MI_MODE         N64_REG32(N64_MI_BASE_REG, MI_MODE_REG)
-
-#define VI_CURRENT      N64_REG32(N64_VI_BASE_REG, VI_CURRENT_REG)
-#define VI_INTR_LINE    N64_REG32(N64_VI_BASE_REG, VI_INTR_REG)
+#define MI_INTR_MASK_WR(val)    N64_HW_WR(N64_MI_BASE_REG, MI_INTR_MASK_REG, (val))
+#define MI_INTR_RD()            N64_HW_RD(N64_MI_BASE_REG, MI_INTR_REG)
+#define VI_CURRENT_RD()         N64_HW_RD(N64_VI_BASE_REG, VI_CURRENT_REG)
+#define VI_INTR_LINE_WR(val)    N64_HW_WR(N64_VI_BASE_REG, VI_INTR_REG, (val))
 
 /* -----------------------------------------------------------------------
  * Software VBlank counter and current VI line
@@ -80,7 +76,7 @@ void N64_IntrEnable(u16 gbaFlags)
             if (miMask & (1u << i))
                 setWord |= (1u << (i * 2 + 1));
         }
-        MI_INTR_MASK = setWord;
+        MI_INTR_MASK_WR(setWord);
     }
 
     /* Enable CPU interrupts (CP0 Status IE bit) */
@@ -111,16 +107,16 @@ void N64_DispatchIntr(void)
         return;  /* Not an interrupt — unexpected exception, ignore */
 
     /* Read MI interrupt register */
-    u32 miIntr = MI_INTR;
+    u32 miIntr = MI_INTR_RD();
 
     /* ------------------------------------------------------------------
      * VI interrupt — VBlank / VCount / HBlank
      * ------------------------------------------------------------------ */
     if (miIntr & MI_INTR_VI) {
-        /* Acknowledge the VI interrupt by writing to VI_CURRENT */
-        VI_INTR_LINE = 0;
+        /* Acknowledge the VI interrupt by writing to VI_INTR */
+        VI_INTR_LINE_WR(0);
 
-        u16 currentLine = (u16)(VI_CURRENT & 0x3FF);
+        u16 currentLine = (u16)(VI_CURRENT_RD() & 0x3FF);
         gN64CurrentLine = currentLine;
 
         /* Update software VCOUNT register */
@@ -178,7 +174,7 @@ void N64_DispatchIntr(void)
         N64_ControllerReadDone();
 
         /* Acknowledge SI */
-        N64_REG32(N64_SI_BASE_REG, SI_STATUS_REG) = 0;
+        N64_HW_WR(N64_SI_BASE_REG, SI_STATUS_REG, 0);
     }
 
     /* ------------------------------------------------------------------
@@ -189,7 +185,7 @@ void N64_DispatchIntr(void)
         N64_PiDmaDone();
 
         /* Acknowledge PI */
-        N64_REG32(N64_PI_BASE_REG, PI_STATUS_REG) = 2;  /* clear interrupt */
+        N64_HW_WR(N64_PI_BASE_REG, PI_STATUS_REG, 2);   /* clear interrupt */
     }
 
     /* ------------------------------------------------------------------
@@ -197,13 +193,13 @@ void N64_DispatchIntr(void)
      * ------------------------------------------------------------------ */
     if (miIntr & MI_INTR_SP) {
         /* Acknowledge SP */
-        N64_REG32(N64_SP_BASE_REG, 0x10) = 1;  /* SP_STATUS: clear halt */
+        N64_HW_WR(N64_SP_BASE_REG, 0x10, 1);   /* SP_STATUS: clear halt */
     }
 
     /* ------------------------------------------------------------------
      * DP interrupt — RDP done (unused for this port)
      * ------------------------------------------------------------------ */
     if (miIntr & MI_INTR_DP) {
-        N64_REG32(N64_DP_BASE_REG, 0x0C) = 0;  /* DPC_STATUS: ack        */
+        N64_HW_WR(N64_DP_BASE_REG, 0x0C, 0);   /* DPC_STATUS: ack        */
     }
 }

@@ -59,9 +59,10 @@
 #include "n64/asm_defs.h"
 
 /* -----------------------------------------------------------------------
- * N64 SI / PIF register access
+ * N64 SI / PIF register access — byte-swap wrappers for big-endian MMIO
  * --------------------------------------------------------------------- */
-#define SI_REG(off)  (*(volatile u32 *)(N64_SI_BASE_REG + (off)))
+#define SI_REG_WR(off, val) N64_HW_WR(N64_SI_BASE_REG, (off), (val))
+#define SI_REG_RD(off)      N64_HW_RD(N64_SI_BASE_REG, (off))
 #define N64_PIF_RAM  ((volatile u8 *)0xBFC007C0)   /* PIF-RAM (64 bytes) */
 
 /* -----------------------------------------------------------------------
@@ -133,8 +134,8 @@ void N64_InputStartRead(void)
     memcpy((void *)N64_PIF_RAM, sPifCmd, 64);
 
     /* Start SI DMA: PIF-RAM → sPifRsp (in RDRAM) */
-    SI_REG(SI_DRAM_ADDR_REG)   = (u32)((uintptr_t)sPifRsp & 0x0FFFFFFF);
-    SI_REG(SI_PIF_ADDR_RD64B)  = 0x1FC007C0;  /* PIF-RAM physical address */
+    SI_REG_WR(SI_DRAM_ADDR_REG,  (u32)((uintptr_t)sPifRsp & 0x0FFFFFFF));
+    SI_REG_WR(SI_PIF_ADDR_RD64B, 0x1FC007C0); /* PIF-RAM physical address */
 
     sReadPending = 1;
 }

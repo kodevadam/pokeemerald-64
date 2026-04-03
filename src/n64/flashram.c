@@ -44,9 +44,10 @@
 #include "gba/flash_internal.h"
 
 /* -----------------------------------------------------------------------
- * PI bus register access
+ * PI bus register access — byte-swap wrappers for big-endian MMIO
  * --------------------------------------------------------------------- */
-#define PI_REG(off)  (*(volatile u32 *)(N64_PI_BASE_REG + (off)))
+#define PI_REG_WR(off, val) N64_HW_WR(N64_PI_BASE_REG, (off), (val))
+#define PI_REG_RD(off)      N64_HW_RD(N64_PI_BASE_REG, (off))
 
 /* -----------------------------------------------------------------------
  * FlashRAM constants
@@ -77,7 +78,7 @@
 static void PiWaitDone(void)
 {
     /* Wait for PI DMA busy and IO busy bits to clear */
-    while (PI_REG(PI_STATUS_REG) & 3)
+    while (PI_REG_RD(PI_STATUS_REG) & 3)
         ;
 }
 
@@ -85,9 +86,9 @@ static void PiWaitDone(void)
 static void PiReadToRdram(u32 cartAddr, void *rdramDst, u32 length)
 {
     PiWaitDone();
-    PI_REG(PI_DRAM_ADDR_REG) = (u32)((uintptr_t)rdramDst & 0x0FFFFFFF);
-    PI_REG(PI_CART_ADDR_REG) = cartAddr;
-    PI_REG(PI_RD_LEN_REG)    = length - 1;
+    PI_REG_WR(PI_DRAM_ADDR_REG, (u32)((uintptr_t)rdramDst & 0x0FFFFFFF));
+    PI_REG_WR(PI_CART_ADDR_REG, cartAddr);
+    PI_REG_WR(PI_RD_LEN_REG,    length - 1);
     PiWaitDone();
 }
 
@@ -95,18 +96,19 @@ static void PiReadToRdram(u32 cartAddr, void *rdramDst, u32 length)
 static void PiWriteFromRdram(u32 cartAddr, const void *rdramSrc, u32 length)
 {
     PiWaitDone();
-    PI_REG(PI_DRAM_ADDR_REG) = (u32)((uintptr_t)rdramSrc & 0x0FFFFFFF);
-    PI_REG(PI_CART_ADDR_REG) = cartAddr;
-    PI_REG(PI_WR_LEN_REG)    = length - 1;
+    PI_REG_WR(PI_DRAM_ADDR_REG, (u32)((uintptr_t)rdramSrc & 0x0FFFFFFF));
+    PI_REG_WR(PI_CART_ADDR_REG, cartAddr);
+    PI_REG_WR(PI_WR_LEN_REG,    length - 1);
     PiWaitDone();
 }
 
 /* -----------------------------------------------------------------------
  * FlashRAM command write — write a 32-bit command word
+ * The FlashRAM command register is on the PI cart bus (big-endian MMIO).
  * --------------------------------------------------------------------- */
 static void FlashRAMCmd(u32 cmd)
 {
-    *(volatile u32 *)FLASHRAM_CMD_ADDR = cmd;
+    N64_REG_WR(FLASHRAM_CMD_ADDR, cmd);
 }
 
 /* -----------------------------------------------------------------------
