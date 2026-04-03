@@ -22,13 +22,16 @@ ENTRY(__n64_boot)
 
 MEMORY
 {
-    /* RDRAM — 4MB base. We reserve the low 1KB for N64 exception vectors.     */
-    /* The "seg" address is what the CPU sees at runtime (cached KSEG0).       */
-    RDRAM  (rwx) : ORIGIN = 0x80000400, LENGTH = 4M - 0x400
+    /* RDRAM — 4MB base + 4MB expansion pak = 8MB total.
+     * We reserve the low 1KB for N64 exception vectors.
+     * Code and writable data live here; large rodata stays in ROM.           */
+    RDRAM  (rwx) : ORIGIN = 0x80000400, LENGTH = 8M - 0x400
 
-    /* ROM image as seen through the PI bus (used for LMA / load addresses).  */
-    /* Offset 0x1000 = after the 4KB header+IPL3 region.                      */
-    ROM    (rx)  : ORIGIN = 0xB0001000, LENGTH = 64M - 0x1000
+    /* ROM image: the full cartridge space via KSEG1 uncached (0xB0000000+).
+     * Sections with `AT > ROM` store their bytes here but execute/load from
+     * their VMA (RDRAM for code/data, or ROM itself for read-only data).
+     * The 4KB at 0xB0000000 is the N64 header; game sections start at +0x1000 */
+    ROM    (rx)  : ORIGIN = 0xB0000000, LENGTH = 64M
 }
 
 /*
@@ -48,21 +51,29 @@ MEMORY
 SECTIONS
 {
     /* ------------------------------------------------------------------ */
-    /*  Boot stub — must be first in ROM so IPL3 jumps to it              */
+    /*  N64 ROM header — lives at ROM byte 0 (LMA = 0xB0000000).         */
+    /*  VMA is also ROM since the header is never copied to RDRAM.        */
     /* ------------------------------------------------------------------ */
-    .boot :
+    .n64header 0xB0000000 :
+    {
+        KEEP(*(.n64header))
+        KEEP(*(.n64header.*))
+    } > ROM
+
+    /* ------------------------------------------------------------------ */
+    /*  Boot / entry stub — runs in RDRAM at 0x80000400.                  */
+    /*  IPL3 copies ROM[0x1000..] → RDRAM[0x80000000..].                  */
+    /*  The .n64header section includes a 0x400-byte zero pad after the   */
+    /*  4KB IPL3 region so crt0.s code lands at RDRAM 0x80000400.         */
+    /* ------------------------------------------------------------------ */
+    .boot 0x80000400 :
     {
         KEEP(*(.boot))
         KEEP(*(.boot.*))
     } > RDRAM AT > ROM
 
     /* ------------------------------------------------------------------ */
-    /*  Exception vector area (0x80000000 – 0x80000400)                   */
-    /*  These are placed by libdragon's crt0; we just reserve space.       */
-    /* ------------------------------------------------------------------ */
-
-    /* ------------------------------------------------------------------ */
-    /*  Read-only data / code                                              */
+    /*  Code and writable data: VMA in RDRAM, LMA in ROM (copied at boot) */
     /* ------------------------------------------------------------------ */
     .text :
     {
@@ -75,18 +86,31 @@ SECTIONS
         . = ALIGN(8);
     } > RDRAM AT > ROM
 
+    /* ------------------------------------------------------------------ */
+    /*  Read-only game data: stays in ROM, accessed via KSEG1 PI bus.     */
+    /*  VMA = LMA = ROM address (0xB0001000+), no RDRAM copy needed.      */
+    /*  The N64 CPU reads from 0xB0000000+ (KSEG1 uncached) or           */
+    /*  0x90000000+ (KSEG0 cached) — both map the same cartridge ROM.     */
+    /* ------------------------------------------------------------------ */
     .rodata :
     {
         *(.rodata .rodata.* .gnu.linkonce.r.*)
         . = ALIGN(8);
-    } > RDRAM AT > ROM
+    } > ROM
 
-    /* GBA ROM data (tile graphics, maps, scripts etc.) are linked here   */
+    /* GBA ROM data (tile graphics, maps, scripts etc.) */
     .rodata.gba :
     {
         *(.rodata.gba .rodata.gba.*)
         . = ALIGN(8);
-    } > RDRAM AT > ROM
+    } > ROM
+
+    /* GBA script/event/text data from data/*.s */
+    .script_data :
+    {
+        *(.script_data .script_data.*)
+        . = ALIGN(8);
+    } > ROM
 
     /* ------------------------------------------------------------------ */
     /*  Initialised data                                                   */
@@ -134,36 +158,9 @@ SECTIONS
     /*  Software GBA hardware buffers (all NOLOAD — zeroed at boot)        */
     /* ------------------------------------------------------------------ */
 
-    .sw_palette (NOLOAD) :
-    {
-        __sw_palette_start = .;
-        . += 0x400;   /* 1024 bytes = 512 BG + 512 OBJ palette entries    */
-        __sw_palette_end = .;
-    } > RDRAM
-
-    .sw_vram (NOLOAD) :
-    {
-        __sw_vram_start = .;
-        . += 0x18000; /* 96KB  = BG tile + screen data + OBJ tile area    */
-        __sw_vram_end = .;
-    } > RDRAM
-
-    .sw_oam (NOLOAD) :
-    {
-        __sw_oam_start = .;
-        . += 0x400;   /* 1024 bytes = 128 sprites × 8 bytes               */
-        __sw_oam_end = .;
-    } > RDRAM
-
-    .sw_ioregs (NOLOAD) :
-    {
-        __sw_ioregs_start = .;
-        . += 0x1000;  /* 4096 bytes of software I/O register state         */
-        __sw_ioregs_end = .;
-    } > RDRAM
-
+    /* Software buffers at fixed addresses so BG_VRAM/PLTT are compile-time constants */
     /* ------------------------------------------------------------------ */
-    /*  Heap (grows upward from here; top is set in platform.c)           */
+    /*  Heap (grows upward from BSS end; bounded by stack bottom)         */
     /* ------------------------------------------------------------------ */
     .heap (NOLOAD) :
     {
@@ -172,10 +169,49 @@ SECTIONS
     } > RDRAM
 
     /* ------------------------------------------------------------------ */
-    /*  Double-buffered framebuffers at the TOP of RDRAM                   */
-    /*  320×240×2 bytes = 153600 bytes ≈ 150 KB each                       */
+    /*  Upper RDRAM fixed layout (expansion pak required for 8MB).        */
+    /*                                                                     */
+    /*  0x807B0000 - 0x807FB000: Double-buffered N64 framebuffers (2×150KB)*/
+    /*  0x807B0000 - 0x807D5800: FB0 (320×240 RGBA5551)                  */
+    /*  0x807D6000 - 0x807FB800: FB1 (320×240 RGBA5551)                  */
+    /*                                                                     */
+    /*  0x80790000 - 0x807AC000: Software GBA hardware buffers           */
+    /*  0x80790000: PLTT  (1024 bytes)                                    */
+    /*  0x80791000: VRAM  (96KB = 0x18000)                                */
+    /*  0x807A9000: OAM   (1024 bytes)                                    */
+    /*  0x807A9400: IOREGS(4096 bytes)                                    */
     /* ------------------------------------------------------------------ */
-    .framebuffers (NOLOAD) :
+
+    .sw_palette 0x80790000 (NOLOAD) :
+    {
+        __sw_palette_start = .;
+        . += 0x400;   /* 1024 bytes = 512 BG + 512 OBJ palette entries    */
+        __sw_palette_end = .;
+    } > RDRAM
+
+    .sw_vram 0x80791000 (NOLOAD) :
+    {
+        __sw_vram_start = .;
+        . += 0x18000; /* 96KB  = BG tile + screen data + OBJ tile area    */
+        __sw_vram_end = .;
+    } > RDRAM
+
+    .sw_oam 0x807A9000 (NOLOAD) :
+    {
+        __sw_oam_start = .;
+        . += 0x400;   /* 1024 bytes = 128 sprites × 8 bytes               */
+        __sw_oam_end = .;
+    } > RDRAM
+
+    .sw_ioregs 0x807A9400 (NOLOAD) :
+    {
+        __sw_ioregs_start = .;
+        . += 0x1000;  /* 4096 bytes of software I/O register state         */
+        __sw_ioregs_end = .;
+    } > RDRAM
+
+    /* N64 scaled-up framebuffers (320×240, 2 bytes/pixel = 153600 bytes each) */
+    .framebuffers 0x807B0000 (NOLOAD) :
     {
         . = ALIGN(64);
         __fb0_start = .;
@@ -193,8 +229,12 @@ SECTIONS
     __rdram_size     = LENGTH(RDRAM);
     __rom_start      = ORIGIN(ROM);
 
-    /* Stack — 64KB, placed just below 4MB RDRAM limit                    */
-    __stack_top      = ORIGIN(RDRAM) + LENGTH(RDRAM);
+    /* _gp: MIPS global pointer — unused (G0 means no GP-relative addressing)
+     * but crt0 loads it; define it as 0 to satisfy the reference. */
+    PROVIDE(_gp = 0);
+
+    /* Stack — 64KB, placed just below SW buffers at 0x80790000           */
+    __stack_top      = 0x80790000;
     __stack_size     = 0x10000;   /* 64KB                                 */
     __stack_bottom   = __stack_top - __stack_size;
 

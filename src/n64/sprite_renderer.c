@@ -28,6 +28,8 @@
 #include "n64/defines.h"
 
 extern u16 gN64GBAFramebuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
+extern void *__n64_oam_buf;
+static inline u8 *OamBuf(void) { return (u8 *)__n64_oam_buf; }
 
 /* Sprite size table: [shape][size] = {width, height} */
 static const int sSpriteSize[3][4][2] = {

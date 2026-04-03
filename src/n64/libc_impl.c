@@ -332,8 +332,69 @@ float sqrtf(float x)
 
 double sin(double x)  { return __builtin_sin(x); }
 double cos(double x)  { return __builtin_cos(x); }
+float  sinf(float x)  { return (float)__builtin_sin((double)x); }
+float  cosf(float x)  { return (float)__builtin_cos((double)x); }
 double fabs(double x) { double r; asm volatile("abs.d %0,%1":"=f"(r):"f"(x)); return r; }
 float fabsf(float x)  { float r; asm volatile("abs.s %0,%1":"=f"(r):"f"(x)); return r; }
+
+/* atan2 / atan2f — needed by ArcTan/ArcTan2 in the game */
+double atan2(double y, double x) { return __builtin_atan2(y, x); }
+float atan2f(float y, float x)   { return (float)__builtin_atan2((double)y, (double)x); }
+
+/* __memcpy_chk / __memset_chk — GCC fortify stubs (should not be called with _FORTIFY_SOURCE=0) */
+void *__memcpy_chk(void *dst, const void *src, __SIZE_TYPE__ n, __SIZE_TYPE__ dstlen)
+{
+    (void)dstlen;
+    return memcpy(dst, src, n);
+}
+void *__memset_chk(void *dst, int c, __SIZE_TYPE__ n, __SIZE_TYPE__ dstlen)
+{
+    (void)dstlen;
+    return memset(dst, c, n);
+}
+
+/* -----------------------------------------------------------------------
+ * 64-bit integer arithmetic helpers (MIPS soft-float ABI)
+ * GCC may emit calls to these for 64-bit divisions / conversions.
+ * --------------------------------------------------------------------- */
+/* Signed 64-bit division */
+long long __divdi3(long long a, long long b)
+{
+    if (b == 0) return 0;
+    int neg = 0;
+    unsigned long long ua = (unsigned long long)a;
+    unsigned long long ub = (unsigned long long)b;
+    if (a < 0) { ua = (unsigned long long)(-a); neg ^= 1; }
+    if (b < 0) { ub = (unsigned long long)(-b); neg ^= 1; }
+    /* Simple long division */
+    unsigned long long q = 0, r = 0;
+    for (int i = 63; i >= 0; i--) {
+        r = (r << 1) | ((ua >> i) & 1);
+        if (r >= ub) { r -= ub; q |= (1ULL << i); }
+    }
+    return neg ? -(long long)q : (long long)q;
+}
+
+/* Unsigned 64-bit division */
+unsigned long long __udivdi3(unsigned long long a, unsigned long long b)
+{
+    if (b == 0) return 0;
+    unsigned long long q = 0, r = 0;
+    for (int i = 63; i >= 0; i--) {
+        r = (r << 1) | ((a >> i) & 1);
+        if (r >= b) { r -= b; q |= (1ULL << i); }
+    }
+    return q;
+}
+
+/* __bswapsi2 — byte-swap 32-bit value (GCC builtins may call this) */
+unsigned int __bswapsi2(unsigned int x)
+{
+    return ((x & 0xFF000000u) >> 24)
+         | ((x & 0x00FF0000u) >>  8)
+         | ((x & 0x0000FF00u) <<  8)
+         | ((x & 0x000000FFu) << 24);
+}
 
 /* -----------------------------------------------------------------------
  * Heap stubs — the game uses its own InitHeap()/AllocInternal() in malloc.c

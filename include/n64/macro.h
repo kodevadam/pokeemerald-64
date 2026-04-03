@@ -247,9 +247,8 @@ do {                                         \
 
 void N64_IntrEnable(u16 flags);
 
-/* -----------------------------------------------------------------------
- * EnableInterrupts — alias used in main.c
- * --------------------------------------------------------------------- */
-#define EnableInterrupts(flags) IntrEnable(flags)
+/* EnableInterrupts / DisableInterrupts are implemented as real functions
+ * in src/n64/gpu_regs_n64.c to avoid macro/declaration conflicts with
+ * gpu_regs.h which declares them as regular functions. */
 
 #endif /* GUARD_N64_MACRO_H */

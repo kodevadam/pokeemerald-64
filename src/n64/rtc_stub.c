@@ -30,7 +30,7 @@ static struct SiiRtcInfo sSoftClock = {
     .year    = 5,    /* 2005 — matching the BuildDateTime in main.c */
     .month   = 2,
     .day     = 21,
-    .weekDay = 1,    /* Monday */
+    .dayOfWeek = 1,    /* Monday */
     .hour    = 11,
     .minute  = 10,
     .second  = 0,
@@ -61,7 +61,7 @@ static void SoftClockTick(void)
             sSoftClock.hour++;
             if (sSoftClock.hour >= 24) {
                 sSoftClock.hour = 0;
-                sSoftClock.weekDay = (sSoftClock.weekDay + 1) % 7;
+                sSoftClock.dayOfWeek = (sSoftClock.dayOfWeek + 1) % 7;
                 sSoftClock.day++;
                 u8 maxDays = sDaysInMonth[sSoftClock.month - 1];
                 /* Leap year: year is BCD-encoded (last 2 digits of year) */
@@ -182,9 +182,9 @@ void SiiRtcProtect(void)
 void  SiiRtcUnprotect(void)                         {}
 void  SiiRtcGetRawInfo(struct SiiRtcInfo *rtc)      { RtcGetInfo(rtc); }
 bool8 SiiRtcProbe(void)                             { return TRUE; }
-void  SiiRtcGetDateTime(struct SiiRtcInfo *rtc)     { RtcGetInfo(rtc); }
-void  SiiRtcGetTime(struct SiiRtcInfo *rtc)         { RtcGetInfo(rtc); }
-void  SiiRtcGetStatus(struct SiiRtcInfo *rtc)       { (void)rtc; }
+bool8 SiiRtcGetDateTime(struct SiiRtcInfo *rtc)     { RtcGetInfo(rtc); return TRUE; }
+bool8 SiiRtcGetTime(struct SiiRtcInfo *rtc)         { RtcGetInfo(rtc); return TRUE; }
+bool8 SiiRtcGetStatus(struct SiiRtcInfo *rtc)       { (void)rtc; return TRUE; }
 u8    SiiRtcGetErrorStatus(struct SiiRtcInfo *rtc)  { (void)rtc; return 0; }
 bool8 SiiRtcSetDateTime(struct SiiRtcInfo *rtc)     { (void)rtc; return TRUE; }
 
@@ -256,4 +256,13 @@ void RtcCalcLocalTimeOffset(s32 days, s32 hours, s32 minutes, s32 seconds)
 void CalcTimeDifference(struct Time *result, struct Time *t1, struct Time *t2)
 {
     (void)result; (void)t1; (void)t2;
+}
+
+/* gLocalTime — the current local time (updated by RtcCalcLocalTime) */
+struct Time gLocalTime = {0};
+
+/* RtcGetLocalDayCount — return days since epoch for use in berry growth etc. */
+u32 RtcGetLocalDayCount(void)
+{
+    return (u32)RtcGetDayCount(&sSoftClock);
 }

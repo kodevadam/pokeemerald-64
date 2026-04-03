@@ -20,6 +20,16 @@
 #include "multiboot.h"
 #include "task.h"
 
+/* LinkTestBGInfo struct is defined in src/link.c which is excluded from
+ * the N64 build; provide the definition here. */
+struct LinkTestBGInfo
+{
+    u32 screenBaseBlock;
+    u32 paletteNum;
+    u32 baseChar;
+    u32 unused;
+};
+
 /* -----------------------------------------------------------------------
  * Global data required by link.h externs
  * --------------------------------------------------------------------- */
@@ -85,9 +95,9 @@ void   ResetSerial(void)                                   {}
 u32    LinkMain1(u8 *adv, u16 *sendCmd, u16 (*recvCmds)[CMD_LENGTH])
                                                            { (void)adv; (void)sendCmd; (void)recvCmds; return 0; }
 void   LinkVSync(void)                                     {}
-void   Timer3Intr(void)                                    {}
+/* Timer3Intr defined in src/n64/bios.c */
 void   SerialCB(void)                                      {}
-bool32 InUnionRoom(void)                                   { return FALSE; }
+/* InUnionRoom defined in src/union_room.c */
 void   LoadWirelessStatusIndicatorSpriteGfx(void)          {}
 bool8  IsLinkTaskFinished(void)                            { return TRUE; }
 void   CreateWirelessStatusIndicatorSprite(u8 x, u8 y)    { (void)x; (void)y; }
@@ -166,6 +176,166 @@ bool32 IsRfuCommunicatingWithAllChildren(void)             { return FALSE; }
 void   LinkRfu_StopManagerAndFinalizeSlots(void)           {}
 bool32 RfuTryDisconnectLeavingChildren(void)               { return FALSE; }
 bool32 HasTrainerLeftPartnersList(u16 id, const u8 *name)  { (void)id; (void)name; return FALSE; }
+
+/* -----------------------------------------------------------------------
+ * Additional global data required by link / wireless code
+ * --------------------------------------------------------------------- */
+u8  gWirelessCommType          = 0;   /* 0 = cable, 1 = wireless */
+u8  gShouldAdvanceLinkState    = 0;
+u16 gSendCmd[CMD_LENGTH]       = {0};
+u16 gRecvCmds[MAX_RFU_PLAYERS][CMD_LENGTH] = {{0}};
+
+/* -----------------------------------------------------------------------
+ * Additional link function stubs
+ * --------------------------------------------------------------------- */
+u8   GetWirelessCommType(void)              { return 0; }
+void SetWirelessCommType(u8 type)           { (void)type; }
+void ClearRecvCommands(void)                {}
+void CheckLinkPlayersMatchSaved(void)       {}
+void SaveLinkTrainerNames(void)             {}
+void SetCloseLinkCallbackAndType(u16 type)  { (void)type; }
+void StartSendingKeysToLink(void)           {}
+void SetHostRfuWonderFlags(bool32 hasNews, bool32 hasCard) { (void)hasNews; (void)hasCard; }
+void ResetHostRfuGameData(void)             {}
+struct RfuGameData *GetHostRfuGameData(void) { return &gHostRfuGameData; }
+void DestroyTask_RfuIdle(void)              {}
+void InitializeRfuLinkManager_JoinGroup(void) {}
+bool32 PlayerHasMetTrainerBefore(u16 id, u8 *name) { (void)id; (void)name; return FALSE; }
+u32  GetLinkRecvQueueLength(void)           { return 0; }
+/* IsSendingKeysOverCable defined in src/overworld.c */
+void LinkRfu_FatalError(void)               {}
+
+/* RFU additional stubs */
+void rfu_REQ_stopMode(void)                 {}
+bool32 Rfu_IsPlayerExchangeActive(void)     { return FALSE; }
+void Rfu_DisconnectPlayerById(u32 playerIdx) { (void)playerIdx; }
+void Rfu_StopPartnerSearch(void)            {}
+void RfuSetNormalDisconnectMode(void)       {}
+void SetUnionRoomChatPlayerData(u32 numPlayers) { (void)numPlayers; }
+void SetTradeBoardRegisteredMonInfo(u32 type, u32 species, u32 level) { (void)type; (void)species; (void)level; }
+void DestroyWirelessStatusIndicatorSprite(void) {}
+
+/* -----------------------------------------------------------------------
+ * GameCube multiboot stubs
+ * --------------------------------------------------------------------- */
+#include "libgcnmultiboot.h"
+void GameCubeMultiBoot_HandleSerialInterrupt(struct GcmbStruct *p) { (void)p; }
+void GameCubeMultiBoot_Main(struct GcmbStruct *p)   { (void)p; }
+void GameCubeMultiBoot_ExecuteProgram(struct GcmbStruct *p) { (void)p; }
+void GameCubeMultiBoot_Init(struct GcmbStruct *p)   { (void)p; }
+void GameCubeMultiBoot_Quit(void)                   {}
+
+/* -----------------------------------------------------------------------
+ * Additional missing link stubs
+ * --------------------------------------------------------------------- */
+bool32 IsSendingKeysToLink(void)                    { return FALSE; }
+bool8  DoesLinkPlayerCountMatchSaved(void)          { return FALSE; }
+u8     GetLinkPlayerInfoFlags(s32 playerId)         { (void)playerId; return 0; }
+void   GetOtherPlayersInfoFlags(void)               {}
+void   Task_DestroySelf(u8 taskId)                  { (void)taskId; }
+
+/* -----------------------------------------------------------------------
+ * RFU link manager stubs (AgbRfu_LinkManager excluded from N64 build)
+ * --------------------------------------------------------------------- */
+void   InitializeRfuLinkManager_EnterUnionRoom(void) {}
+void   TryConnectToUnionRoomParent(const u8 *name, struct RfuGameData *parent, u8 activity)
+                                                    { (void)name; (void)parent; (void)activity; }
+bool32 IsUnionRoomListenTaskActive(void)            { return FALSE; }
+void   SendLeaveGroupNotice(void)                   {}
+void   StopUnionRoomLinkManager(void)               {}
+void   LinkRfu_CreateConnectionAsParent(void)       {}
+void   LinkRfu_StopManagerBeforeEnteringChat(void)  {}
+bool8  LmanAcceptSlotFlagIsNotZero(void)            { return FALSE; }
+void   UpdateGameData_SetActivity(u8 activity, u32 partnerInfo, bool32 startedActivity)
+                                                    { (void)activity; (void)partnerInfo; (void)startedActivity; }
+void   SendRfuStatusToPartner(u8 status, u16 trainerId, const u8 *name)
+                                                    { (void)status; (void)trainerId; (void)name; }
+u32    WaitSendRfuStatusToPartner(u16 trainerId, const u8 *name)
+                                                    { (void)trainerId; (void)name; return 0; }
+void   RequestDisconnectSlotByTrainerNameAndId(const u8 *name, u16 id)
+                                                    { (void)name; (void)id; }
+bool32 WaitRfuState(bool32 force)                   { (void)force; return FALSE; }
+void   CreateTask_RfuIdle(void)                     {}
+void   CreateTask_RfuReconnectWithParent(const u8 *name, u16 trainerId)
+                                                    { (void)name; (void)trainerId; }
+void   Rfu_SendPacket(void *data)                   { (void)data; }
+bool8  Rfu_GetCompatiblePlayerData(struct RfuGameData *gameData, u8 *username, u8 idx)
+                                                    { (void)gameData; (void)username; (void)idx; return FALSE; }
+bool8  Rfu_GetWonderDistributorPlayerData(struct RfuGameData *gameData, u8 *username, u8 idx)
+                                                    { (void)gameData; (void)username; (void)idx; return FALSE; }
+s32    Rfu_GetIndexOfNewestChild(u8 bits)           { (void)bits; return -1; }
+
+/* -----------------------------------------------------------------------
+ * librfu hardware stubs (librfu_rfu.c etc excluded from N64 build)
+ * All rfu_* functions are hardware-specific; stub as no-ops / errors.
+ * --------------------------------------------------------------------- */
+#include "librfu.h"
+
+/* Global RFU state pointers — NULL means no hardware */
+struct RfuLinkStatus    *gRfuLinkStatus               = NULL;
+struct RfuSlotStatusNI  *gRfuSlotStatusNI[RFU_CHILD_MAX] = {NULL};
+struct RfuSlotStatusUNI *gRfuSlotStatusUNI[RFU_CHILD_MAX] = {NULL};
+
+u16   rfu_initializeAPI(u32 *b, u16 sz, IntrFunc *t, bool8 cr) { (void)b;(void)sz;(void)t;(void)cr; return 0; }
+void  rfu_setTimerInterrupt(u8 n, IntrFunc *t)       { (void)n; (void)t; }
+u16   rfu_syncVBlank(void)                           { return 0; }
+void  rfu_setREQCallback(void (*cb)(u16,u16))        { (void)cb; }
+u16   rfu_waitREQComplete(void)                      { return 0; }
+u32   rfu_REQBN_softReset_and_checkID(void)          { return 0xFFFFFFFF; }
+void  rfu_REQ_reset(void)                            {}
+void  rfu_REQ_configSystem(u16 a, u8 b, u8 c)       { (void)a;(void)b;(void)c; }
+void  rfu_REQ_configGameData(u8 f, u16 s, const u8 *g, const u8 *u) { (void)f;(void)s;(void)g;(void)u; }
+void  rfu_REQ_startSearchChild(void)                 {}
+void  rfu_REQ_pollSearchChild(void)                  {}
+void  rfu_REQ_endSearchChild(void)                   {}
+void  rfu_REQ_startSearchParent(void)                {}
+void  rfu_REQ_pollSearchParent(void)                 {}
+void  rfu_REQ_endSearchParent(void)                  {}
+void  rfu_REQ_startConnectParent(u16 pid)            { (void)pid; }
+void  rfu_REQ_pollConnectParent(void)                {}
+void  rfu_REQ_endConnectParent(void)                 {}
+u16   rfu_getConnectParentStatus(u8 *s, u8 *n)      { (void)s;(void)n; return 0; }
+void  rfu_REQ_CHILD_startConnectRecovery(u8 b)       { (void)b; }
+void  rfu_REQ_CHILD_pollConnectRecovery(void)        {}
+void  rfu_REQ_CHILD_endConnectRecovery(void)         {}
+u16   rfu_CHILD_getConnectRecoveryStatus(u8 *s)      { (void)s; return 0; }
+u16   rfu_REQBN_watchLink(u16 id, u8 *bm, u8 *r, u8 *pbm)
+                                                     { (void)id;(void)bm;(void)r;(void)pbm; return 0; }
+void  rfu_REQ_disconnect(u8 bm)                      { (void)bm; }
+void  rfu_REQ_changeMasterSlave(void)                {}
+bool8 rfu_getMasterSlave(void)                       { return FALSE; }
+void  rfu_setMSCCallback(void (*cb)(u16))            { (void)cb; }
+void  rfu_clearAllSlot(void)                         {}
+u16   rfu_clearSlot(u8 f, u8 idx)                   { (void)f;(void)idx; return 0; }
+u16   rfu_setRecvBuffer(u8 t, u8 n, void *b, u32 sz){ (void)t;(void)n;(void)b;(void)sz; return 0; }
+u16   rfu_UNI_setSendData(u8 bm, const void *s, u8 sz) { (void)bm;(void)s;(void)sz; return 0; }
+void  rfu_UNI_readySendData(u8 idx)                  { (void)idx; }
+u16   rfu_UNI_changeAndReadySendData(u8 i, const void *s, u8 sz) { (void)i;(void)s;(void)sz; return 0; }
+u16   rfu_UNI_PARENT_getDRAC_ACK(u8 *f)             { (void)f; return 0; }
+void  rfu_UNI_clearRecvNewDataFlag(u8 idx)           { (void)idx; }
+u16   rfu_NI_setSendData(u8 bm, u8 sub, const void *s, u32 sz) { (void)bm;(void)sub;(void)s;(void)sz; return 0; }
+u16   rfu_NI_CHILD_setSendGameName(u8 n, u8 sub)    { (void)n;(void)sub; return 0; }
+u16   rfu_NI_stopReceivingData(u8 idx)               { (void)idx; return 0; }
+u16   rfu_changeSendTarget(u8 t, u8 idx, u8 bm)     { (void)t;(void)idx;(void)bm; return 0; }
+void  rfu_REQ_sendData(bool8 clk)                    { (void)clk; }
+void  rfu_REQ_RFUStatus(void)                        {}
+u16   rfu_getRFUStatus(u8 *s)                        { (void)s; return 0; }
+u8   *rfu_getSTWIRecvBuffer(void)                    { return NULL; }
+u16   rfu_REQBN_watchLink_slave(u16 id, u8 *bm, u8 *r, u8 *pbm)
+                                                     { (void)id;(void)bm;(void)r;(void)pbm; return 0; }
+
+/* -----------------------------------------------------------------------
+ * MPlayJumpTableCopy — M4A function stub (m4a_1.s excluded)
+ * --------------------------------------------------------------------- */
+#include "m4a.h"
+void MPlayJumpTableCopy(MPlayFunc *tbl) { (void)tbl; }
+
+/* -----------------------------------------------------------------------
+ * ROM header stubs — RomHeaderGameCode / RomHeaderSoftwareVersion
+ * (src/rom_header.s is the GBA version, excluded; provide N64 equivalents)
+ * --------------------------------------------------------------------- */
+const u8 RomHeaderGameCode[4]   = { 'B', 'P', 'E', 'E' };
+const u8 RomHeaderSoftwareVersion = 0;
 
 /* -----------------------------------------------------------------------
  * multiboot.h function stubs (multiboot.c excluded — ARM-only assembly)

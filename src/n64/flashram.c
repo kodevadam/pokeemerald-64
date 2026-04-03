@@ -43,6 +43,12 @@
 #include "n64/defines.h"
 #include "gba/flash_internal.h"
 
+/* Forward declarations of N64 flash implementations */
+static u16 N64_ProgramSector(u16 sectorNum, const void *src);
+static u16 N64_EraseSector(u16 sectorNum);
+static u16 N64_EraseChip(void);
+static u32 N64_VerifyFlashSector(u16 sectorNum, const u8 *src, u32 size);
+
 /* -----------------------------------------------------------------------
  * PI bus register access — byte-swap wrappers for big-endian MMIO
  * --------------------------------------------------------------------- */
@@ -155,10 +161,10 @@ void N64_InitFlashRAM(void)
  * Replaces the GBA ReadFlash() / ReadFlash16() functions.
  * The game calls this to load save data.
  * --------------------------------------------------------------------- */
-u32 ReadFlash(u16 sectorNum, u32 offset, u8 *dst, u32 size)
+void ReadFlash(u16 sectorNum, u32 offset, u8 *dst, u32 size)
 {
     if (!sFlashRAMPresent)
-        return size;  /* simulate read (data already cleared to 0) */
+        return;  /* simulate read (data already cleared to 0) */
 
     u32 cartAddr = FLASHRAM_PI_ADDR
                  + (u32)sectorNum * FLASHRAM_SECTOR_SIZE
@@ -174,11 +180,10 @@ u32 ReadFlash(u16 sectorNum, u32 offset, u8 *dst, u32 size)
     } else {
         PiReadToRdram(cartAddr, dst, size);
     }
-    return 0;
 }
 
 /* -----------------------------------------------------------------------
- * ProgramFlashSector — write a 128-byte sector to FlashRAM
+ * N64_ProgramSector — write a 128-byte sector to FlashRAM
  *
  * N64 FlashRAM write sequence:
  *   1. Set write offset: CMD = 0xB4000000 | (sector & 0xFF)
@@ -186,7 +191,7 @@ u32 ReadFlash(u16 sectorNum, u32 offset, u8 *dst, u32 size)
  *   3. Execute write: CMD = 0xA5000000
  *   4. Poll status until WRITE_OK
  * --------------------------------------------------------------------- */
-u32 ProgramFlashSector(u16 sectorNum, const void *src)
+static u16 N64_ProgramSector(u16 sectorNum, const void *src)
 {
     if (!sFlashRAMPresent)
         return 0;
@@ -216,14 +221,14 @@ u32 ProgramFlashSector(u16 sectorNum, const void *src)
 }
 
 /* -----------------------------------------------------------------------
- * EraseFlashSector — erase a 128-byte sector
+ * N64_EraseSector — erase a 128-byte sector
  *
  * N64 FlashRAM erase sequence:
  *   1. Set erase offset: CMD = 0xE1000000 | (sector & 0xFF)
  *   2. Execute erase:    CMD = 0xD2000000
  *   3. Poll status until ERASE_OK
  * --------------------------------------------------------------------- */
-u32 EraseFlashSector(u16 sectorNum)
+static u16 N64_EraseSector(u16 sectorNum)
 {
     if (!sFlashRAMPresent)
         return 0;
@@ -246,12 +251,12 @@ u32 EraseFlashSector(u16 sectorNum)
 }
 
 /* -----------------------------------------------------------------------
- * EraseFlashChip — erase the entire 128 KB FlashRAM
+ * N64_EraseChip — erase the entire 128 KB FlashRAM
  * --------------------------------------------------------------------- */
-u32 EraseFlashChip(void)
+static u16 N64_EraseChip(void)
 {
     for (u16 s = 0; s < FLASHRAM_NUM_SECTORS; s++) {
-        u32 result = EraseFlashSector(s);
+        u16 result = N64_EraseSector(s);
         if (result != 0) return result;
     }
     return 0;
@@ -285,8 +290,8 @@ u32 WriteFlash(u16 sectorNum, u32 offset, const u8 *src, u32 size)
         memcpy(sectorBuf + secOffset, src + written, toWrite);
 
         /* Erase then program */
-        EraseFlashSector(curSector);
-        ProgramFlashSector(curSector, sectorBuf);
+        N64_EraseSector(curSector);
+        N64_ProgramSector(curSector, sectorBuf);
 
         written += toWrite;
     }
@@ -345,26 +350,26 @@ static u16 N64_ProgramFlashByte(u16 sectorNum, u32 offset, u8 data)
 }
 u16 (*ProgramFlashByte)(u16, u32, u8) = N64_ProgramFlashByte;
 
-/* ProgramFlashSector (function pointer version) — write whole sector */
+/* ProgramFlashSector function pointer — write whole sector */
 static u16 N64_ProgramFlashSectorFP(u16 sectorNum, u8 *src)
 {
-    return (u16)ProgramFlashSector(sectorNum, src);
+    return N64_ProgramSector(sectorNum, src);
 }
-u16 (*ProgramFlashSectorFP)(u16, u8 *) = N64_ProgramFlashSectorFP;
+u16 (*ProgramFlashSector)(u16, u8 *) = N64_ProgramFlashSectorFP;
 
 /* EraseFlashSector function pointer */
 static u16 N64_EraseFlashSectorFP(u16 sectorNum)
 {
-    return (u16)EraseFlashSector(sectorNum);
+    return N64_EraseSector(sectorNum);
 }
-u16 (*EraseFlashSector_FP)(u16) = N64_EraseFlashSectorFP;
+u16 (*EraseFlashSector)(u16) = N64_EraseFlashSectorFP;
 
 /* EraseFlashChip function pointer */
 static u16 N64_EraseFlashChipFP(void)
 {
-    return (u16)EraseFlashChip();
+    return N64_EraseChip();
 }
-u16 (*EraseFlashChip_FP)(void) = N64_EraseFlashChipFP;
+u16 (*EraseFlashChip)(void) = N64_EraseFlashChipFP;
 
 /* WaitForFlashWrite — no-op on N64 (writes complete synchronously) */
 static u16 N64_WaitForFlashWrite(u8 phase, u8 *addr, u8 lastData)
@@ -385,18 +390,13 @@ u8 (*PollFlashStatus)(u8 *) = N64_PollFlashStatus;
 /* ProgramFlashSectorAndVerify — erase, program, then verify */
 u32 ProgramFlashSectorAndVerify(u16 sectorNum, u8 *src)
 {
-    EraseFlashSector(sectorNum);
-    u32 result = ProgramFlashSector(sectorNum, src);
+    N64_EraseSector(sectorNum);
+    u16 result = N64_ProgramSector(sectorNum, src);
     if (result != 0) return result;
-    return VerifyFlashSector(sectorNum, src, FLASHRAM_SECTOR_SIZE);
+    return N64_VerifyFlashSector(sectorNum, src, FLASHRAM_SECTOR_SIZE);
 }
 
-/* SetFlashTimerIntr / IdentifyFlash / WaitForFlashWrite_Common — no-ops */
-u16 SetFlashTimerIntr(u8 timerNum, void (**intrFunc)(void))
-{
-    (void)timerNum; (void)intrFunc;
-    return 0;
-}
+/* SetFlashTimerIntr defined in src/n64/bios.c */
 
 u16 IdentifyFlash(void) { return 0; }
 
@@ -406,8 +406,8 @@ u16 WaitForFlashWrite_Common(u8 phase, u8 *addr, u8 lastData)
     return 0;
 }
 
-/* VerifyFlashSector — compare written data against source */
-u32 VerifyFlashSector(u16 sectorNum, const u8 *src, u32 size)
+/* N64_VerifyFlashSector — compare written data against source */
+static u32 N64_VerifyFlashSector(u16 sectorNum, const u8 *src, u32 size)
 {
     u8 verifyBuf[FLASHRAM_SECTOR_SIZE] __attribute__((aligned(8)));
     for (u32 off = 0; off < size; off += FLASHRAM_SECTOR_SIZE) {

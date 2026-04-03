@@ -25,6 +25,7 @@
 
 #include <stdint.h>
 #include "global.h"
+#include "main.h"
 #include "n64/asm_defs.h"
 
 extern void N64_RtcVBlankTick(void);

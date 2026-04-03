@@ -33,17 +33,19 @@ void ClearDma3Requests(void)
 }
 
 /* RequestDma3Copy — queue an asynchronous memcpy for the next VBlank */
-void RequestDma3Copy(const void *src, void *dst, u16 size, u32 mode)
+s16 RequestDma3Copy(const void *src, void *dst, u16 size, u8 mode)
 {
     /* On N64 there's no timing benefit to deferring; execute immediately */
     (void)mode;
     memcpy(dst, src, size);
+    return 0;
 }
 
-void RequestDma3Fill(s32 value, void *dst, u16 size, u32 mode)
+s16 RequestDma3Fill(s32 value, void *dst, u16 size, u8 mode)
 {
     (void)mode;
     memset(dst, value & 0xFF, size);
+    return 0;
 }
 
 /* These are aliases in the original GBA code; provide them for link compat */
@@ -51,3 +53,12 @@ void RequestDma3CopyWithMode(const void *src, void *dst, u16 size, u32 mode)
 {
     RequestDma3Copy(src, dst, size, mode);
 }
+
+/* CheckForSpaceForDma3Request — dma3_manager.c is excluded; always returns 0 (space available) */
+s16 CheckForSpaceForDma3Request(s16 index)
+{
+    (void)index;
+    return 0;  /* space always available */
+}
+
+/* IsDma3ManagerBusyWithBgCopy — defined in src/bg.c */

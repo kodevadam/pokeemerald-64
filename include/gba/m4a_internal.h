@@ -1,7 +1,11 @@
 #ifndef GUARD_GBA_M4A_INTERNAL_H
 #define GUARD_GBA_M4A_INTERNAL_H
 
+#if defined(N64_PORT) && N64_PORT
+#include "n64/n64.h"
+#else
 #include "gba/gba.h"
+#endif
 
 // ASCII encoding of 'Smsh' in reverse
 // This is presumably short for SMASH, the developer of MKS4AGB.

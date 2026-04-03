@@ -42,16 +42,24 @@ extern void *__n64_pltt_buf;   /* points to __sw_palette_start in RDRAM */
 extern void *__n64_vram_buf;   /* points to __sw_vram_start  in RDRAM   */
 extern void *__n64_oam_buf;    /* points to __sw_oam_start   in RDRAM   */
 
-/* These macros match the GBA address-space constants but resolve to
- * actual RDRAM pointers at runtime via the above extern variables.     */
-#define PLTT          ((u32)(uintptr_t)__n64_pltt_buf)
+/* Fixed RDRAM addresses for software GBA buffers.
+ * These are compile-time constants so they can be used in static initializers.
+ * The linker script places the buffers at exactly these addresses.
+ * 0x80300000 = 3MB into RDRAM (code+data must fit below this) */
+#define N64_PLTT_BASE   0x80300000u
+#define N64_VRAM_BASE   0x80301000u   /* 1KB after PLTT (PLTT_SIZE = 0x400) */
+#define N64_OAM_BASE    0x80319000u   /* after VRAM (VRAM_SIZE = 0x18000) */
+#define N64_IOREGS_BASE 0x80319400u   /* after OAM (OAM_SIZE = 0x400) */
+
+/* GBA-compatible address constants — now compile-time constants for N64 */
+#define PLTT          N64_PLTT_BASE
 #define BG_PLTT       PLTT
 #define BG_PLTT_SIZE  0x200
 #define OBJ_PLTT      (PLTT + BG_PLTT_SIZE)
 #define OBJ_PLTT_SIZE 0x200
 #define PLTT_SIZE     (BG_PLTT_SIZE + OBJ_PLTT_SIZE)
 
-#define VRAM           ((u32)(uintptr_t)__n64_vram_buf)
+#define VRAM           N64_VRAM_BASE
 #define VRAM_SIZE      0x18000
 
 #define BG_VRAM           VRAM
@@ -74,7 +82,7 @@ extern void *__n64_oam_buf;    /* points to __sw_oam_start   in RDRAM   */
 #define OBJ_VRAM1      (VRAM + 0x14000)
 #define OBJ_VRAM1_SIZE 0x4000
 
-#define OAM      ((u32)(uintptr_t)__n64_oam_buf)
+#define OAM      N64_OAM_BASE
 #define OAM_SIZE 0x400
 
 /* -----------------------------------------------------------------------
@@ -93,6 +101,16 @@ extern void             *__n64_intr_vector;
  * Display constants — keep GBA values; the compositor renders at 240×160
  * and the VI scaler centres the image on the 320×240 display.
  * --------------------------------------------------------------------- */
+/* GBA memory region constants — on N64 everything is RDRAM, but we keep
+ * these values for code that uses them as sentinel/range checks.
+ * IWRAM_END is used to check if a pointer is "above" IWRAM; since N64
+ * uses standard pointers, we set it to a very high address that no valid
+ * N64 RDRAM pointer would reach under normal use. */
+#define EWRAM_START 0x02000000
+#define EWRAM_END   (EWRAM_START + 0x40000)
+#define IWRAM_START 0x03000000
+#define IWRAM_END   (IWRAM_START + 0x8000)
+
 #define TILE_WIDTH  8
 #define TILE_HEIGHT 8
 

@@ -90,11 +90,34 @@
 #define REG_OFFSET_FIFO_A      0x0A0
 #define REG_OFFSET_FIFO_B      0x0A4
 
+/* Sound wave RAM and bias */
+#define REG_OFFSET_SOUNDBIAS_H 0x089
+#define REG_OFFSET_WAVE_RAM0   0x090
+#define REG_OFFSET_WAVE_RAM1   0x094
+#define REG_OFFSET_WAVE_RAM2   0x098
+#define REG_OFFSET_WAVE_RAM3   0x09C
+
 /* DMA (stubs; real transfers done via memcpy on N64) */
 #define REG_OFFSET_DMA0        0x0B0
+#define REG_OFFSET_DMA0CNT     0x0B8
+#define REG_OFFSET_DMA0CNT_L   0x0B8
+#define REG_OFFSET_DMA0CNT_H   0x0BA
 #define REG_OFFSET_DMA1        0x0BC
+#define REG_OFFSET_DMA1SAD     0x0BC
+#define REG_OFFSET_DMA1DAD     0x0C0
+#define REG_OFFSET_DMA1CNT     0x0C4
+#define REG_OFFSET_DMA1CNT_L   0x0C4
+#define REG_OFFSET_DMA1CNT_H   0x0C6
 #define REG_OFFSET_DMA2        0x0C8
+#define REG_OFFSET_DMA2SAD     0x0C8
+#define REG_OFFSET_DMA2DAD     0x0CC
+#define REG_OFFSET_DMA2CNT     0x0D0
+#define REG_OFFSET_DMA2CNT_L   0x0D0
+#define REG_OFFSET_DMA2CNT_H   0x0D2
 #define REG_OFFSET_DMA3        0x0D4
+#define REG_OFFSET_DMA3CNT     0x0DC
+#define REG_OFFSET_DMA3CNT_L   0x0DC
+#define REG_OFFSET_DMA3CNT_H   0x0DE
 
 /* Timers */
 #define REG_OFFSET_TM0CNT_L    0x100
@@ -109,6 +132,9 @@
 /* Serial / SIO */
 #define REG_OFFSET_SIOCNT      0x128
 #define REG_OFFSET_SIODATA8    0x12A
+#define REG_OFFSET_SIODATA32   0x120
+#define REG_OFFSET_SIOMLT_SEND 0x12A
+#define REG_OFFSET_SIOMLT_RECV 0x120
 
 /* Keypad */
 #define REG_OFFSET_KEYINPUT    0x130
@@ -152,7 +178,14 @@ extern u8 gN64IoRegs[N64_IOREGS_SIZE];
 #define REG_VCOUNT   _REG16(REG_OFFSET_VCOUNT)
 
 /* DISPCNT bit fields */
-#define DISPCNT_MODE_MASK     0x0007
+#define DISPCNT_MODE_MASK      0x0007
+#define DISPCNT_HBLANK_INTERVAL 0x0020
+#define DISPCNT_MODE_0        0x0000
+#define DISPCNT_MODE_1        0x0001
+#define DISPCNT_MODE_2        0x0002
+#define DISPCNT_MODE_3        0x0003
+#define DISPCNT_MODE_4        0x0004
+#define DISPCNT_MODE_5        0x0005
 #define DISPCNT_OBJ_1D_MAP    0x0040
 #define DISPCNT_FORCED_BLANK  0x0080
 #define DISPCNT_BG0_ON        0x0100
@@ -163,6 +196,24 @@ extern u8 gN64IoRegs[N64_IOREGS_SIZE];
 #define DISPCNT_WIN0_ON       0x2000
 #define DISPCNT_WIN1_ON       0x4000
 #define DISPCNT_OBJWIN_ON     0x8000
+#define DISPCNT_BG_ALL_ON     0x0F00
+
+/* BGCNT flags */
+#define BGCNT_PRIORITY(n)          (n)
+#define BGCNT_CHARBASE(n)   ((n) << 2)
+#define BGCNT_MOSAIC            0x0040
+#define BGCNT_16COLOR           0x0000
+#define BGCNT_256COLOR          0x0080
+#define BGCNT_SCREENBASE(n) ((n) << 8)
+#define BGCNT_WRAP              0x2000
+#define BGCNT_TXT256x256        0x0000
+#define BGCNT_TXT512x256        0x4000
+#define BGCNT_TXT256x512        0x8000
+#define BGCNT_TXT512x512        0xC000
+#define BGCNT_AFF128x128        0x0000
+#define BGCNT_AFF256x256        0x4000
+#define BGCNT_AFF512x512        0x8000
+#define BGCNT_AFF1024x1024      0xC000
 
 /* DISPSTAT bit fields */
 #define DISPSTAT_VBLANK       0x0001
@@ -239,6 +290,60 @@ extern u8 gN64IoRegs[N64_IOREGS_SIZE];
 #define BLDCNT_TGT2_BG3        0x0800
 #define BLDCNT_TGT2_OBJ        0x1000
 #define BLDCNT_TGT2_BD         0x2000
+#define BLDALPHA_BLEND(target1, target2) (((target2) << 8) | (target1))
+#define BLDCNT_TGT1_BG_ALL   (BLDCNT_TGT1_BG0 | BLDCNT_TGT1_BG1 | BLDCNT_TGT1_BG2 | BLDCNT_TGT1_BG3)
+#define BLDCNT_TGT1_ALL      (BLDCNT_TGT1_BG_ALL | BLDCNT_TGT1_OBJ | BLDCNT_TGT1_BD)
+#define BLDCNT_TGT2_BG_ALL   (BLDCNT_TGT2_BG0 | BLDCNT_TGT2_BG1 | BLDCNT_TGT2_BG2 | BLDCNT_TGT2_BG3)
+#define BLDCNT_TGT2_ALL      (BLDCNT_TGT2_BG_ALL | BLDCNT_TGT2_OBJ | BLDCNT_TGT2_BD)
+
+/* WININ flags */
+#define WININ_WIN0_BG0      (1 << 0)
+#define WININ_WIN0_BG1      (1 << 1)
+#define WININ_WIN0_BG2      (1 << 2)
+#define WININ_WIN0_BG3      (1 << 3)
+#define WININ_WIN0_BG_ALL   (WININ_WIN0_BG0 | WININ_WIN0_BG1 | WININ_WIN0_BG2 | WININ_WIN0_BG3)
+#define WININ_WIN0_OBJ      (1 << 4)
+#define WININ_WIN0_CLR      (1 << 5)
+#define WININ_WIN0_ALL      (WININ_WIN0_BG_ALL | WININ_WIN0_OBJ | WININ_WIN0_CLR)
+#define WININ_WIN1_BG0      (1 << 8)
+#define WININ_WIN1_BG1      (1 << 9)
+#define WININ_WIN1_BG2      (1 << 10)
+#define WININ_WIN1_BG3      (1 << 11)
+#define WININ_WIN1_BG_ALL   (WININ_WIN1_BG0 | WININ_WIN1_BG1 | WININ_WIN1_BG2 | WININ_WIN1_BG3)
+#define WININ_WIN1_OBJ      (1 << 12)
+#define WININ_WIN1_CLR      (1 << 13)
+#define WININ_WIN1_ALL      (WININ_WIN1_BG_ALL | WININ_WIN1_OBJ | WININ_WIN1_CLR)
+
+/* WINOUT flags */
+#define WINOUT_WIN01_BG0    (1 << 0)
+#define WINOUT_WIN01_BG1    (1 << 1)
+#define WINOUT_WIN01_BG2    (1 << 2)
+#define WINOUT_WIN01_BG3    (1 << 3)
+#define WINOUT_WIN01_BG_ALL (WINOUT_WIN01_BG0 | WINOUT_WIN01_BG1 | WINOUT_WIN01_BG2 | WINOUT_WIN01_BG3)
+#define WINOUT_WIN01_OBJ    (1 << 4)
+#define WINOUT_WIN01_CLR    (1 << 5)
+#define WINOUT_WIN01_ALL    (WINOUT_WIN01_BG_ALL | WINOUT_WIN01_OBJ | WINOUT_WIN01_CLR)
+#define WINOUT_WINOBJ_BG0   (1 << 8)
+#define WINOUT_WINOBJ_BG1   (1 << 9)
+#define WINOUT_WINOBJ_BG2   (1 << 10)
+#define WINOUT_WINOBJ_BG3   (1 << 11)
+#define WINOUT_WINOBJ_BG_ALL (WINOUT_WINOBJ_BG0 | WINOUT_WINOBJ_BG1 | WINOUT_WINOBJ_BG2 | WINOUT_WINOBJ_BG3)
+#define WINOUT_WINOBJ_OBJ   (1 << 12)
+#define WINOUT_WINOBJ_CLR   (1 << 13)
+#define WINOUT_WINOBJ_ALL   (WINOUT_WINOBJ_BG_ALL | WINOUT_WINOBJ_OBJ | WINOUT_WINOBJ_CLR)
+
+/* Button constants */
+#define A_BUTTON        0x0001
+#define B_BUTTON        0x0002
+#define SELECT_BUTTON   0x0004
+#define START_BUTTON    0x0008
+#define DPAD_RIGHT      0x0010
+#define DPAD_LEFT       0x0020
+#define DPAD_UP         0x0040
+#define DPAD_DOWN       0x0080
+#define R_BUTTON        0x0100
+#define L_BUTTON        0x0200
+#define DPAD_ANY        ((DPAD_RIGHT | DPAD_LEFT | DPAD_UP | DPAD_DOWN))
 
 /* -----------------------------------------------------------------------
  * Sound registers (values stored for M4A sequencer compatibility;
@@ -278,9 +383,126 @@ extern u8 gN64IoRegs[N64_IOREGS_SIZE];
  * without crashing; dma3_stub.c reads them and executes the transfer.
  * --------------------------------------------------------------------- */
 #define REG_ADDR_DMA0 (gN64IoRegs + REG_OFFSET_DMA0)
-#define REG_ADDR_DMA1 (gN64IoRegs + REG_OFFSET_DMA1)
-#define REG_ADDR_DMA2 (gN64IoRegs + REG_OFFSET_DMA2)
-#define REG_ADDR_DMA3 (gN64IoRegs + REG_OFFSET_DMA3)
+#define REG_ADDR_DMA1     (gN64IoRegs + REG_OFFSET_DMA1)
+#define REG_ADDR_DMA1SAD  (gN64IoRegs + REG_OFFSET_DMA1SAD)
+#define REG_ADDR_DMA1DAD  (gN64IoRegs + REG_OFFSET_DMA1DAD)
+#define REG_ADDR_DMA2     (gN64IoRegs + REG_OFFSET_DMA2)
+#define REG_ADDR_DMA2SAD  (gN64IoRegs + REG_OFFSET_DMA2SAD)
+#define REG_ADDR_DMA2DAD  (gN64IoRegs + REG_OFFSET_DMA2DAD)
+#define REG_ADDR_DMA3     (gN64IoRegs + REG_OFFSET_DMA3)
+#define REG_DMA1SAD _REG32(REG_OFFSET_DMA1SAD)
+#define REG_DMA1DAD _REG32(REG_OFFSET_DMA1DAD)
+#define REG_DMA2SAD _REG32(REG_OFFSET_DMA2SAD)
+#define REG_DMA2DAD _REG32(REG_OFFSET_DMA2DAD)
+
+/* Sound wave RAM registers */
+#define REG_ADDR_WAVE_RAM0  (gN64IoRegs + REG_OFFSET_WAVE_RAM0)
+#define REG_ADDR_WAVE_RAM1  (gN64IoRegs + REG_OFFSET_WAVE_RAM1)
+#define REG_ADDR_WAVE_RAM2  (gN64IoRegs + REG_OFFSET_WAVE_RAM2)
+#define REG_ADDR_WAVE_RAM3  (gN64IoRegs + REG_OFFSET_WAVE_RAM3)
+#define REG_ADDR_SOUNDBIAS_H (gN64IoRegs + REG_OFFSET_SOUNDBIAS_H)
+#define REG_WAVE_RAM0  _REG32(REG_OFFSET_WAVE_RAM0)
+#define REG_WAVE_RAM1  _REG32(REG_OFFSET_WAVE_RAM1)
+#define REG_WAVE_RAM2  _REG32(REG_OFFSET_WAVE_RAM2)
+#define REG_WAVE_RAM3  _REG32(REG_OFFSET_WAVE_RAM3)
+#define REG_SOUNDBIAS_H _REG8(REG_OFFSET_SOUNDBIAS_H)
+
+/* CGB sound channel NR addresses */
+#define REG_ADDR_NR10  (gN64IoRegs + REG_OFFSET_SOUND1CNT_L)
+#define REG_ADDR_NR11  (gN64IoRegs + REG_OFFSET_SOUND1CNT_H)
+#define REG_ADDR_NR12  (gN64IoRegs + REG_OFFSET_SOUND1CNT_H + 1)
+#define REG_ADDR_NR13  (gN64IoRegs + REG_OFFSET_SOUND1CNT_X)
+#define REG_ADDR_NR14  (gN64IoRegs + REG_OFFSET_SOUND1CNT_X + 1)
+#define REG_ADDR_NR21  (gN64IoRegs + REG_OFFSET_SOUND2CNT_L)
+#define REG_ADDR_NR22  (gN64IoRegs + REG_OFFSET_SOUND2CNT_L + 1)
+#define REG_ADDR_NR23  (gN64IoRegs + REG_OFFSET_SOUND2CNT_H)
+#define REG_ADDR_NR24  (gN64IoRegs + REG_OFFSET_SOUND2CNT_H + 1)
+#define REG_ADDR_NR30  (gN64IoRegs + REG_OFFSET_SOUND3CNT_L)
+#define REG_ADDR_NR31  (gN64IoRegs + REG_OFFSET_SOUND3CNT_H)
+#define REG_ADDR_NR32  (gN64IoRegs + REG_OFFSET_SOUND3CNT_H + 1)
+#define REG_ADDR_NR33  (gN64IoRegs + REG_OFFSET_SOUND3CNT_X)
+#define REG_ADDR_NR34  (gN64IoRegs + REG_OFFSET_SOUND3CNT_X + 1)
+#define REG_ADDR_NR41  (gN64IoRegs + REG_OFFSET_SOUND4CNT_L)
+#define REG_ADDR_NR42  (gN64IoRegs + REG_OFFSET_SOUND4CNT_L + 1)
+#define REG_ADDR_NR43  (gN64IoRegs + REG_OFFSET_SOUND4CNT_H)
+#define REG_ADDR_NR44  (gN64IoRegs + REG_OFFSET_SOUND4CNT_H + 1)
+
+/* VCOUNT address */
+#define REG_ADDR_VCOUNT (gN64IoRegs + REG_OFFSET_VCOUNT)
+#define REG_ADDR_DMA0CNT   (gN64IoRegs + REG_OFFSET_DMA0CNT)
+#define REG_ADDR_DMA0CNT_L (gN64IoRegs + REG_OFFSET_DMA0CNT_L)
+#define REG_ADDR_DMA0CNT_H (gN64IoRegs + REG_OFFSET_DMA0CNT_H)
+#define REG_ADDR_DMA1CNT   (gN64IoRegs + REG_OFFSET_DMA1CNT)
+#define REG_ADDR_DMA1CNT_L (gN64IoRegs + REG_OFFSET_DMA1CNT_L)
+#define REG_ADDR_DMA1CNT_H (gN64IoRegs + REG_OFFSET_DMA1CNT_H)
+#define REG_ADDR_DMA2CNT   (gN64IoRegs + REG_OFFSET_DMA2CNT)
+#define REG_ADDR_DMA2CNT_L (gN64IoRegs + REG_OFFSET_DMA2CNT_L)
+#define REG_ADDR_DMA2CNT_H (gN64IoRegs + REG_OFFSET_DMA2CNT_H)
+#define REG_ADDR_DMA3CNT   (gN64IoRegs + REG_OFFSET_DMA3CNT)
+#define REG_ADDR_DMA3CNT_L (gN64IoRegs + REG_OFFSET_DMA3CNT_L)
+#define REG_ADDR_DMA3CNT_H (gN64IoRegs + REG_OFFSET_DMA3CNT_H)
+#define REG_DMA0CNT   _REG32(REG_OFFSET_DMA0CNT)
+#define REG_DMA0CNT_L _REG16(REG_OFFSET_DMA0CNT_L)
+#define REG_DMA0CNT_H _REG16(REG_OFFSET_DMA0CNT_H)
+#define REG_DMA1CNT   _REG32(REG_OFFSET_DMA1CNT)
+#define REG_DMA1CNT_L _REG16(REG_OFFSET_DMA1CNT_L)
+#define REG_DMA1CNT_H _REG16(REG_OFFSET_DMA1CNT_H)
+#define REG_DMA2CNT   _REG32(REG_OFFSET_DMA2CNT)
+#define REG_DMA2CNT_L _REG16(REG_OFFSET_DMA2CNT_L)
+#define REG_DMA2CNT_H _REG16(REG_OFFSET_DMA2CNT_H)
+#define REG_DMA3CNT   _REG32(REG_OFFSET_DMA3CNT)
+#define REG_DMA3CNT_L _REG16(REG_OFFSET_DMA3CNT_L)
+#define REG_DMA3CNT_H _REG16(REG_OFFSET_DMA3CNT_H)
+
+/* Sound control register flags (writes go to software regs; N64 audio handled separately) */
+#define SOUND_A_RIGHT_OUTPUT  0x0100
+#define SOUND_A_LEFT_OUTPUT   0x0200
+#define SOUND_A_TIMER_0       0x0000
+#define SOUND_A_TIMER_1       0x0400
+#define SOUND_A_FIFO_RESET    0x0800
+#define SOUND_B_RIGHT_OUTPUT  0x1000
+#define SOUND_B_LEFT_OUTPUT   0x2000
+#define SOUND_B_TIMER_0       0x0000
+#define SOUND_B_TIMER_1       0x4000
+#define SOUND_B_FIFO_RESET    0x8000
+#define SOUND_1_ON          0x0001
+#define SOUND_2_ON          0x0002
+#define SOUND_3_ON          0x0004
+#define SOUND_4_ON          0x0008
+#define SOUND_MASTER_ENABLE 0x0080
+
+/* Background scroll register addresses (used by DMA/scanline effect code) */
+#define REG_ADDR_BG0CNT  (gN64IoRegs + REG_OFFSET_BG0CNT)
+#define REG_ADDR_BG1CNT  (gN64IoRegs + REG_OFFSET_BG1CNT)
+#define REG_ADDR_BG2CNT  (gN64IoRegs + REG_OFFSET_BG2CNT)
+#define REG_ADDR_BG3CNT  (gN64IoRegs + REG_OFFSET_BG3CNT)
+#define REG_ADDR_BG0HOFS (gN64IoRegs + REG_OFFSET_BG0HOFS)
+#define REG_ADDR_BG0VOFS (gN64IoRegs + REG_OFFSET_BG0VOFS)
+#define REG_ADDR_BG1HOFS (gN64IoRegs + REG_OFFSET_BG1HOFS)
+#define REG_ADDR_BG1VOFS (gN64IoRegs + REG_OFFSET_BG1VOFS)
+#define REG_ADDR_BG2HOFS (gN64IoRegs + REG_OFFSET_BG2HOFS)
+#define REG_ADDR_BG2VOFS (gN64IoRegs + REG_OFFSET_BG2VOFS)
+#define REG_ADDR_BG3HOFS (gN64IoRegs + REG_OFFSET_BG3HOFS)
+#define REG_ADDR_BG3VOFS (gN64IoRegs + REG_OFFSET_BG3VOFS)
+#define REG_ADDR_BG2PA   (gN64IoRegs + REG_OFFSET_BG2PA)
+#define REG_ADDR_BG2PB   (gN64IoRegs + REG_OFFSET_BG2PB)
+#define REG_ADDR_BG2PC   (gN64IoRegs + REG_OFFSET_BG2PC)
+#define REG_ADDR_BG2PD   (gN64IoRegs + REG_OFFSET_BG2PD)
+#define REG_ADDR_BG2X_L  (gN64IoRegs + REG_OFFSET_BG2X_L)
+#define REG_ADDR_BG2X_H  (gN64IoRegs + REG_OFFSET_BG2X_H)
+#define REG_ADDR_BG2Y_L  (gN64IoRegs + REG_OFFSET_BG2Y_L)
+#define REG_ADDR_BG2Y_H  (gN64IoRegs + REG_OFFSET_BG2Y_H)
+#define REG_ADDR_WIN0H   (gN64IoRegs + REG_OFFSET_WIN0H)
+#define REG_ADDR_WIN0V   (gN64IoRegs + REG_OFFSET_WIN0V)
+#define REG_ADDR_WIN1H   (gN64IoRegs + REG_OFFSET_WIN1H)
+#define REG_ADDR_WIN1V   (gN64IoRegs + REG_OFFSET_WIN1V)
+#define REG_ADDR_WININ   (gN64IoRegs + REG_OFFSET_WININ)
+#define REG_ADDR_WINOUT  (gN64IoRegs + REG_OFFSET_WINOUT)
+#define REG_ADDR_BLDCNT  (gN64IoRegs + REG_OFFSET_BLDCNT)
+#define REG_ADDR_BLDALPHA (gN64IoRegs + REG_OFFSET_BLDALPHA)
+#define REG_ADDR_BLDY    (gN64IoRegs + REG_OFFSET_BLDY)
+#define REG_ADDR_DISPCNT (gN64IoRegs + REG_OFFSET_DISPCNT)
+#define REG_ADDR_DISPSTAT (gN64IoRegs + REG_OFFSET_DISPSTAT)
 
 /* DMA control bit fields (same as GBA) */
 #define DMA_DEST_INC    0x0000
@@ -294,12 +516,23 @@ extern u8 gN64IoRegs[N64_IOREGS_SIZE];
 #define DMA_16BIT       0x0000
 #define DMA_32BIT       0x0400
 #define DMA_DREQ_ON     0x0800
-#define DMA_START_NOW   0x0000
-#define DMA_START_VBLANK 0x1000
-#define DMA_START_HBLANK 0x2000
-#define DMA_START_MASK  0x3000
-#define DMA_INTR_ENABLE 0x4000
-#define DMA_ENABLE      0x8000
+#define DMA_START_NOW     0x0000
+#define DMA_START_VBLANK  0x1000
+#define DMA_START_HBLANK  0x2000
+#define DMA_START_SPECIAL 0x3000
+#define DMA_START_MASK    0x3000
+#define DMA_INTR_ENABLE   0x4000
+#define DMA_ENABLE        0x8000
+
+/* Sound mix constants */
+#define SOUND_CGB_MIX_QUARTER 0x0000
+#define SOUND_CGB_MIX_HALF    0x0001
+#define SOUND_CGB_MIX_FULL    0x0002
+#define SOUND_A_MIX_HALF      0x0000
+#define SOUND_A_MIX_FULL      0x0004
+#define SOUND_B_MIX_HALF      0x0000
+#define SOUND_B_MIX_FULL      0x0008
+#define SOUND_ALL_MIX_FULL    0x000E
 
 /* -----------------------------------------------------------------------
  * Timer registers — backed by N64 CP0 Count register.
@@ -320,6 +553,11 @@ extern u8 gN64IoRegs[N64_IOREGS_SIZE];
 #define TIMER_PRESCALER_256  0x02
 #define TIMER_PRESCALER_1024 0x03
 #define TIMER_COUNT_UP       0x04
+#define TIMER_1CLK           0x00
+#define TIMER_64CLK          0x01
+#define TIMER_256CLK         0x02
+#define TIMER_1024CLK        0x03
+#define TIMER_INTR_ENABLE    0x40
 #define TIMER_INTR_ENABLE    0x40
 #define TIMER_ENABLE         0x80
 
@@ -328,8 +566,32 @@ extern u8 gN64IoRegs[N64_IOREGS_SIZE];
  * --------------------------------------------------------------------- */
 #define REG_KEYINPUT _REG16(REG_OFFSET_KEYINPUT)
 #define REG_KEYCNT   _REG16(REG_OFFSET_KEYCNT)
-#define REG_SIOCNT   _REG16(REG_OFFSET_SIOCNT)
-#define REG_RCNT     _REG16(REG_OFFSET_RCNT)
+#define REG_SIOCNT       _REG16(REG_OFFSET_SIOCNT)
+#define REG_SIODATA8     _REG16(REG_OFFSET_SIODATA8)
+#define REG_SIODATA32    _REG32(REG_OFFSET_SIODATA32)
+#define REG_SIOMLT_SEND  _REG16(REG_OFFSET_SIOMLT_SEND)
+#define REG_SIOMLT_RECV  _REG32(REG_OFFSET_SIOMLT_RECV)
+#define REG_RCNT         _REG16(REG_OFFSET_RCNT)
+#define REG_ADDR_SIOCNT      (gN64IoRegs + REG_OFFSET_SIOCNT)
+#define REG_ADDR_SIODATA8    (gN64IoRegs + REG_OFFSET_SIODATA8)
+#define REG_ADDR_SIODATA32   (gN64IoRegs + REG_OFFSET_SIODATA32)
+#define REG_ADDR_SIOMLT_SEND (gN64IoRegs + REG_OFFSET_SIOMLT_SEND)
+#define REG_ADDR_SIOMLT_RECV (gN64IoRegs + REG_OFFSET_SIOMLT_RECV)
+
+/* SIO mode/control flags */
+#define SIO_32BIT_MODE     0x1000
+#define SIO_MULTI_MODE     0x2000
+#define SIO_38400_BPS      0x0001
+#define SIO_115200_BPS     0x0003
+#define SIO_MULTI_SI       0x0004
+#define SIO_MULTI_SD       0x0008
+#define SIO_MULTI_BUSY     0x0080
+#define SIO_ENABLE         0x0080
+#define SIO_INTR_ENABLE    0x4000
+#define SIO_MULTI_SI_SHIFT 2
+#define SIO_MULTI_SI_MASK  0x1
+#define SIO_MULTI_DI_SHIFT 3
+#define SIO_MULTI_DI_MASK  0x1
 
 /* Keypad bitmask — active high on N64 (GBA is active low; the shim inverts) */
 #define KEYS_MASK 0x03FF
@@ -369,5 +631,9 @@ extern u8 gN64IoRegs[N64_IOREGS_SIZE];
 #define WAITCNT_WS0_N_8         0x0003
 #define WAITCNT_WS0_S_2         0x0000
 #define WAITCNT_WS0_S_1         0x0004
+
+/* WIN_RANGE: encode window horizontal/vertical boundary registers */
+#define WIN_RANGE(a, b)  (((a) << 8) | (b))
+#define WIN_RANGE2(a, b) ((b) | ((a) << 8))
 
 #endif /* GUARD_N64_IO_REG_H */

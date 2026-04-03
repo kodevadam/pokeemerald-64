@@ -34,6 +34,7 @@
 #include <math.h>
 #include "global.h"
 #include "m4a.h"
+#include "gba/m4a_internal.h"
 #include "n64/asm_defs.h"
 
 /* -----------------------------------------------------------------------
@@ -82,38 +83,15 @@ static inline struct SoundInfo *GetSoundInfo(void)
 /* -----------------------------------------------------------------------
  * GBA M4A channel structure — mirrors m4a_internal.h SoundChannel
  *
- * We read the channel state that m4a.c writes; this struct must match
- * the layout that the GBA M4A sources define exactly.
+ * We use the actual struct SoundChannel from gba/m4a_internal.h.
  * --------------------------------------------------------------------- */
-#pragma pack(push, 1)
-typedef struct {
-    u8  statusFlags;    /* 0: inactive, bit7: active, bit6: loop, etc. */
-    u8  type;           /* 8 = PCM, 0-3 = CGB */
-    u8  rightVolume;
-    u8  leftVolume;
-    u8  attack;
-    u8  decay;
-    u8  sustain;
-    u8  release;
-    u8  envelopePos;
-    u8  envelopeFrac;
-    u8  envelopeValue;
-    u8  padding0;
-    u16 envelopeGoal;
-    u8  padding1[2];
-    u32 frequency;      /* playback frequency in Hz */
-    u8 *waveData;       /* pointer to PCM wave data (8-bit signed) */
-    u32 loopStart;      /* loop start offset in samples */
-    u32 size;           /* wave length in samples */
-    s32 count;          /* samples remaining until loop / end */
-    u32 fw;             /* fractional wave position */
-} M4AChannel;
-#pragma pack(pop)
+typedef struct SoundChannel M4AChannel;
 
-#define M4A_MAX_CHANNELS    12
-#define M4A_STATUS_ACTIVE   0x80
-#define M4A_STATUS_LOOP     0x10
-#define M4A_TYPE_CGB        0x08
+/* Map audio.c field aliases to the actual m4a_internal.h field names */
+#define M4A_MAX_CHANNELS    MAX_DIRECTSOUND_CHANNELS
+#define M4A_STATUS_ACTIVE   SOUND_CHANNEL_SF_START
+#define M4A_STATUS_LOOP     SOUND_CHANNEL_SF_LOOP
+#define M4A_TYPE_CGB        TONEDATA_TYPE_CGB
 
 /* -----------------------------------------------------------------------
  * CGB channel state
@@ -233,32 +211,32 @@ static void MixAudioFrame(s16 *buf, int samples)
      * Mix PCM channels
      * Each channel: 8-bit signed samples, resampled to N64_AUDIO_SAMPLE_RATE
      * ------------------------------------------------------------------ */
-    M4AChannel *channels = (M4AChannel *)si->channels;
+    M4AChannel *channels = si->chans;
     int numChannels = si->maxChans;
     if (numChannels > M4A_MAX_CHANNELS) numChannels = M4A_MAX_CHANNELS;
 
     for (int ch = 0; ch < numChannels; ch++) {
         M4AChannel *c = &channels[ch];
         if (!(c->statusFlags & M4A_STATUS_ACTIVE)) continue;
-        if (!c->waveData || c->frequency == 0)     continue;
+        if (!c->wav || c->frequency == 0)          continue;
         if (c->type & M4A_TYPE_CGB)                continue; /* handled below */
 
         /* Resample ratio: increment = srcFreq / dstFreq in fixed-point (16.16) */
         u32 rateInc = (u32)(((u64)c->frequency << 16) / N64_AUDIO_SAMPLE_RATE);
         u32 pos     = c->fw;   /* current sample position (16.16 fixed-point) */
 
-        int volL = (c->leftVolume  * c->envelopeValue) >> 8;
-        int volR = (c->rightVolume * c->envelopeValue) >> 8;
+        int volL = (c->leftVolume  * c->envelopeVolume) >> 8;
+        int volR = (c->rightVolume * c->envelopeVolume) >> 8;
         if (volL < 0) volL = 0; if (volL > 255) volL = 255;
         if (volR < 0) volR = 0; if (volR > 255) volR = 255;
 
         for (int i = 0; i < samples; i++) {
             int sampleIdx = (int)(pos >> 16);
             /* Loop handling */
-            if (sampleIdx >= (int)c->size) {
+            if (sampleIdx >= (int)c->wav->size) {
                 if (c->statusFlags & M4A_STATUS_LOOP) {
-                    sampleIdx = (int)c->loopStart +
-                                (sampleIdx - (int)c->size) % (int)(c->size - c->loopStart);
+                    sampleIdx = (int)c->wav->loopStart +
+                                (sampleIdx - (int)c->wav->size) % (int)(c->wav->size - c->wav->loopStart);
                 } else {
                     /* Channel done */
                     c->statusFlags &= ~M4A_STATUS_ACTIVE;
@@ -267,7 +245,7 @@ static void MixAudioFrame(s16 *buf, int samples)
             }
 
             /* 8-bit signed sample → 16-bit */
-            s8 sample = (s8)c->waveData[sampleIdx];
+            s8 sample = c->wav->data[sampleIdx];
             s32 s16L  = (s32)sample * volL >> volShift;
             s32 s16R  = (s32)sample * volR >> volShift;
 
@@ -439,4 +417,137 @@ void m4aSoundMain(void)
  * MixAudioFrame() in the AI interrupt.
  * --------------------------------------------------------------------- */
 void SoundMain(void)    { /* no-op — mixing done in AI interrupt */ }
-void SoundMainRAM(void) { /* no-op */ }
+/* SoundMainRAM: on GBA this is ARM code that gets copied to IWRAM.
+ * On N64 it's a dummy char array so m4a.c's memcpy in m4aSoundInit
+ * compiles but copies harmless zeros. */
+char SoundMainRAM[4] = {0};
+
+/* -----------------------------------------------------------------------
+ * M4A library internals — all from m4a_1.s (excluded from N64 build).
+ * These are stub implementations; actual audio runs via N64_AudioRefill().
+ * --------------------------------------------------------------------- */
+void SoundMainBTM(void)   { /* no-op */ }
+void TrackStop(struct MusicPlayerInfo *mpi, struct MusicPlayerTrack *trk)
+    { (void)mpi; (void)trk; }
+void MPlayMain(struct MusicPlayerInfo *mpi) { (void)mpi; }
+void MPlayExtender(struct CgbChannel *cgb)  { (void)cgb; }
+void FadeOutBody(struct MusicPlayerInfo *mpi) { (void)mpi; }
+void RealClearChain(void *x)  { (void)x; }
+void SampleFreqSet(u32 freq) { (void)freq; }
+void TrkVolPitSet(struct MusicPlayerInfo *mpi, struct MusicPlayerTrack *trk)
+    { (void)mpi; (void)trk; }
+
+/* M4A MIDI command handlers — called via jump table in m4a_tables */
+void ply_fine(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_goto(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_patt(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_pend(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_rept(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_prio(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_tempo(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_keysh(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_voice(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_vol(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)   { (void)m;(void)t; }
+void ply_pan(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)   { (void)m;(void)t; }
+void ply_bend(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_bendr(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_lfodl(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_lfos(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_mod(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)   { (void)m;(void)t; }
+void ply_modt(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_tune(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_port(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)  { (void)m;(void)t; }
+void ply_endtie(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t){ (void)m;(void)t; }
+void ply_xxx(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t)   { (void)m;(void)t; }
+void ply_xcmd_0D(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t){ (void)m;(void)t; }
+void ply_xatta(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_xdeca(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_xsust(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_xrele(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_xiecv(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_xiecl(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_xleng(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_xswee(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_xtype(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_xwave(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+void ply_xwait(struct MusicPlayerInfo *m, struct MusicPlayerTrack *t) { (void)m;(void)t; }
+
+/* gNumMusicPlayers — defines how many music players exist.
+ * char[] so NUM_MUSIC_PLAYERS can cast it to u16. We have 4 players. */
+char gNumMusicPlayers[2] = {4, 0};
+
+/* MusicPlayerInfo instances — defined here since m4a_1.s is excluded */
+struct MusicPlayerInfo gMPlayInfo_BGM;
+struct MusicPlayerInfo gMPlayInfo_SE1;
+struct MusicPlayerInfo gMPlayInfo_SE2;
+struct MusicPlayerInfo gMPlayInfo_SE3;
+
+/* gMaxLines — used by MPlayExtender for CGB channel limit; unused on N64 */
+char gMaxLines[1] = {0};
+
+/* umul3232H32 — multiply two 32-bit values and return the high 32 bits.
+ * Used by MidiKeyToFreq for pitch calculation. */
+u32 umul3232H32(u32 a, u32 b)
+{
+    return (u32)(((u64)a * (u64)b) >> 32);
+}
+
+/* ply_note — note-on handler; no-op on N64 (we don't play GBA music format) */
+void ply_note(u32 note_cmd, struct MusicPlayerInfo *mpi, struct MusicPlayerTrack *trk)
+{
+    (void)note_cmd; (void)mpi; (void)trk;
+}
+
+/* Dummy song data — a 1-track song that ends immediately (FINE = 0xB1) */
+static u8 sDummySongPart[1] = { 0xB1 }; /* FINE command */
+
+/* mus_dummy / dummy_song_header — stub song headers referenced by song table.
+ * The song table stores the ADDRESS of these as .4byte symbols.
+ * The flexible array member 'part' must be last; we initialize via compound lit. */
+const struct SongHeader mus_dummy = {
+    .trackCount = 1, .blockCount = 0, .priority = 0, .reverb = 0,
+    .tone = NULL, .part = { sDummySongPart }
+};
+const struct SongHeader dummy_song_header = {
+    .trackCount = 1, .blockCount = 0, .priority = 0, .reverb = 0,
+    .tone = NULL, .part = { sDummySongPart }
+};
+
+/* -----------------------------------------------------------------------
+ * High-level m4a API stubs (from src/m4a.c, excluded on N64)
+ * All audio is silent/no-op on N64 — we have no GBA sound hardware.
+ * --------------------------------------------------------------------- */
+struct SoundInfo gSoundInfo;
+
+/* PokemonCrySong stubs — cry songs array used by pokemon sound effects */
+struct PokemonCrySong gPokemonCrySongs[1];
+
+void m4aSoundInit(void)                                                       {}
+void m4aSoundVSyncOn(void)                                                    {}
+void m4aSongNumStart(u16 n)                                                   { (void)n; }
+void m4aSongNumStartOrChange(u16 n)                                           { (void)n; }
+void m4aSongNumStop(u16 n)                                                    { (void)n; }
+void m4aMPlayAllStop(void)                                                    {}
+void m4aMPlayStop(struct MusicPlayerInfo *mpi)                                { (void)mpi; }
+void m4aMPlayContinue(struct MusicPlayerInfo *mpi)                            { (void)mpi; }
+void m4aMPlayFadeOut(struct MusicPlayerInfo *mpi, u16 speed)                  { (void)mpi; (void)speed; }
+void m4aMPlayFadeOutTemporarily(struct MusicPlayerInfo *mpi, u16 speed)       { (void)mpi; (void)speed; }
+void m4aMPlayFadeIn(struct MusicPlayerInfo *mpi, u16 speed)                   { (void)mpi; (void)speed; }
+void m4aMPlayImmInit(struct MusicPlayerInfo *mpi)                             { (void)mpi; }
+void m4aMPlayTempoControl(struct MusicPlayerInfo *mpi, u16 tempo)             { (void)mpi; (void)tempo; }
+void m4aMPlayVolumeControl(struct MusicPlayerInfo *mpi, u16 bits, u16 vol)    { (void)mpi; (void)bits; (void)vol; }
+void m4aMPlayPitchControl(struct MusicPlayerInfo *mpi, u16 bits, s16 pitch)   { (void)mpi; (void)bits; (void)pitch; }
+void m4aMPlayPanpotControl(struct MusicPlayerInfo *mpi, u16 bits, s8 pan)     { (void)mpi; (void)bits; (void)pan; }
+
+/* Pokemon cry control stubs */
+struct MusicPlayerInfo *SetPokemonCryTone(struct ToneData *tone)              { (void)tone; return NULL; }
+void SetPokemonCryVolume(u8 val)                                              { (void)val; }
+void SetPokemonCryPanpot(s8 val)                                              { (void)val; }
+void SetPokemonCryPitch(s16 val)                                              { (void)val; }
+void SetPokemonCryLength(u16 val)                                             { (void)val; }
+void SetPokemonCryRelease(u8 val)                                             { (void)val; }
+void SetPokemonCryProgress(u32 val)                                           { (void)val; }
+bool32 IsPokemonCryPlaying(struct MusicPlayerInfo *mpi)                       { (void)mpi; return FALSE; }
+void SetPokemonCryChorus(s8 val)                                              { (void)val; }
+void SetPokemonCryStereo(u32 val)                                             { (void)val; }
+void SetPokemonCryPriority(u8 val)                                            { (void)val; }

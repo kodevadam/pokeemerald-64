@@ -23,8 +23,64 @@
 #include "global.h"
 #include "scanline_effect.h"
 
-extern struct ScanlineEffect gScanlineEffect;
-extern u16 gScanlineEffectRegBuffers[2][0x3C0];
+/* Define the global data here (scanline_effect.c is excluded from N64 build) */
+struct ScanlineEffect gScanlineEffect;
+u16 gScanlineEffectRegBuffers[2][0x3C0];
+
+/* -----------------------------------------------------------------------
+ * ScanlineEffect control functions (scanline_effect.c is excluded on N64)
+ * --------------------------------------------------------------------- */
+
+void ScanlineEffect_Stop(void)
+{
+    gScanlineEffect.state = 0;
+}
+
+void ScanlineEffect_Clear(void)
+{
+    /* Zero the register buffers */
+    for (int b = 0; b < 2; b++)
+        for (int i = 0; i < 0x3C0; i++)
+            gScanlineEffectRegBuffers[b][i] = 0;
+
+    gScanlineEffect.dmaSrcBuffers[0] = NULL;
+    gScanlineEffect.dmaSrcBuffers[1] = NULL;
+    gScanlineEffect.dmaDest     = NULL;
+    gScanlineEffect.dmaControl  = 0;
+    gScanlineEffect.srcBuffer   = 0;
+    gScanlineEffect.state       = 0;
+    gScanlineEffect.unused16    = 0;
+    gScanlineEffect.unused17    = 0;
+    gScanlineEffect.waveTaskId  = 0xFF; /* TASK_NONE */
+}
+
+void ScanlineEffect_SetParams(struct ScanlineEffectParams params)
+{
+    /* On N64 we just record the parameters; ApplyLine reads them each frame */
+    gScanlineEffect.dmaControl  = params.dmaControl;
+    gScanlineEffect.dmaDest     = params.dmaDest;
+    gScanlineEffect.state       = params.initState;
+    gScanlineEffect.unused16    = params.unused9;
+    gScanlineEffect.unused17    = params.unused9;
+    /* Set src buffer pointers to scanline buffer data */
+    gScanlineEffect.dmaSrcBuffers[0] = (u16 *)gScanlineEffectRegBuffers[0];
+    gScanlineEffect.dmaSrcBuffers[1] = (u16 *)gScanlineEffectRegBuffers[1];
+}
+
+void ScanlineEffect_InitHBlankDmaTransfer(void)
+{
+    /* On N64, no DMA; effect is applied per-scanline in the software renderer */
+    if (gScanlineEffect.state == 3)
+        gScanlineEffect.state = 0;
+}
+
+u8 ScanlineEffect_InitWave(u8 startLine, u8 endLine, u8 frequency, u8 amplitude, u8 delayInterval, u8 regOffset, bool8 applyBattleBgOffsets)
+{
+    /* No-op on N64 — wave effects would need custom compositor support */
+    (void)startLine; (void)endLine; (void)frequency; (void)amplitude;
+    (void)delayInterval; (void)regOffset; (void)applyBattleBgOffsets;
+    return 0;
+}
 
 /*
  * ScanlineEffect_ApplyLine — overrides the weak stub in tile_renderer.c

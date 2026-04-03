@@ -11,6 +11,7 @@
 #define RESET_REGS       0x80
 #define RESET_ALL        0xFF
 
+#if !defined(N64_PORT) || !N64_PORT
 void SoftReset(u32 resetFlags);
 
 void RegisterRamReset(u32 resetFlags);
@@ -20,11 +21,13 @@ void VBlankIntrWait(void);
 u16 Sqrt(u32 num);
 
 u16 ArcTan2(s16 x, s16 y);
+#endif /* !N64_PORT */
 
 #define CPU_SET_SRC_FIXED 0x01000000
 #define CPU_SET_16BIT     0x00000000
 #define CPU_SET_32BIT     0x04000000
 
+#if !defined(N64_PORT) || !N64_PORT
 void CpuSet(const void *src, void *dest, u32 control);
 
 #if MODERN
@@ -68,5 +71,6 @@ void RLUnCompVram(const u32 *src, void *dest);
 int MultiBoot(struct MultiBootParam *mp);
 
 s32 Div(s32 num, s32 denom);
+#endif /* !N64_PORT */
 
 #endif // GUARD_GBA_SYSCALL_H

@@ -28,7 +28,7 @@
  * Entry point: 0x80000400 = start of __n64_boot in RDRAM (KSEG0)
  */
 
-    .section .boot, "ax"
+    .section .n64header, "a"
     .set noreorder
 
     /* PI BSD Domain 1 register values */
@@ -80,3 +80,9 @@
     /* IPL3 boot code region — 4032 bytes, must be filled externally */
     /* Leave as zeros; inject IPL3 before building final ROM */
     .space  0x1000 - 0x40
+
+    /* Exception vector area — 0x400 bytes of zero padding.
+     * IPL3 copies ROM[0x1000..0x1400) → RDRAM[0x80000000..0x80000400).
+     * crt0.s __n64_boot runs from RDRAM 0x80000400 and installs
+     * the real exception vectors at RDRAM 0x80000000-0x800001FF. */
+    .space  0x400

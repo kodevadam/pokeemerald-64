@@ -109,3 +109,32 @@ void CopyBufferedValuesToGpuRegs(void)
     extern volatile u16 gN64CurrentLine;
     _REG16(REG_OFFSET_VCOUNT) = gN64CurrentLine;
 }
+
+/* -----------------------------------------------------------------------
+ * EnableInterrupts / DisableInterrupts
+ * Declared in gpu_regs.h; implemented here for N64.
+ * --------------------------------------------------------------------- */
+void EnableInterrupts(u16 mask)
+{
+    N64_IntrEnable(mask);
+}
+
+void DisableInterrupts(u16 mask)
+{
+    /* On N64 we don't currently disable individual interrupt sources;
+     * the game uses this for temporary critical sections which are
+     * short enough that we can ignore. */
+    (void)mask;
+}
+
+/* -----------------------------------------------------------------------
+ * SetGpuReg_ForcedBlank — sets a register while also enabling forced blank.
+ * On N64, forced blank just means we clear screen (the compositor handles it).
+ * --------------------------------------------------------------------- */
+void SetGpuReg_ForcedBlank(u8 regOffset, u16 value)
+{
+    /* Enable forced blank in DISPCNT */
+    _REG16(REG_OFFSET_DISPCNT) |= DISPCNT_FORCED_BLANK;
+    /* Write the target register */
+    SetGpuReg(regOffset, value);
+}

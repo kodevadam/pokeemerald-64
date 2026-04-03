@@ -34,6 +34,11 @@ SIZE    := $(PREFIX)size
 CHKSUM64 := $(BUILD_DIR)/tools/n64crc
 CHKSUM64_SRC := tools/n64crc.c
 
+# Data processing tools (host native)
+PREPROC := tools/preproc/preproc
+GFX     := tools/gbagfx/gbagfx
+CHARMAP := charmap.txt
+
 # ---------- Compiler flags --------------------------------
 # -mips3       : MIPS III ISA  (VR4300 supports MIPS III)
 # -mabi=32     : 32-bit ABI    (o32, avoids 64-bit ABI surprises)
@@ -64,10 +69,17 @@ CFLAGS := $(ARCH_FLAGS)                \
            -DMODERN=1                  \
            -DNDEBUG                    \
            -DBUGFIX                    \
-           -I include                  \
-           -I include/n64
+           -D_FORTIFY_SOURCE=0         \
+           -iquote include             \
+           -iquote include/n64
 
-ASFLAGS := $(ARCH_FLAGS) -EL -I include -I include/n64
+# CPP flags for the data assembly preprocessing step (no ARCH_FLAGS — runs on host)
+# -include data/n64_specials_constants.inc: pre-defines SPECIAL_* constants so that
+#   .2byte SPECIAL_X in specialvar macros resolves to an absolute value (no BFD_RELOC_16)
+CPP_DATA_FLAGS := -E -DN64_PORT=1 -DMODERN=1 -Iinclude -Iinclude/n64 \
+                  -include data/n64_specials_constants.inc
+
+ASFLAGS := $(ARCH_FLAGS) -EL -iquote include -iquote include/n64
 
 LDFLAGS := -T n64.ld                   \
             -Map $(BUILD_DIR)/$(MAP_NAME) \
@@ -93,6 +105,7 @@ N64_SRCS := \
     src/n64/gpu_regs_n64.c      \
     src/n64/rtc_stub.c          \
     src/n64/link_stub.c         \
+    src/n64/song_stubs.c        \
     src/n64/scanline_effect_n64.c \
     src/n64/rom_header.s        \
     src/n64/libc_impl.c
@@ -101,7 +114,9 @@ N64_SRCS := \
 # Exclude GBA-specific hardware files superseded by N64 equivalents
 EXCLUDED_SRCS := \
     src/m4a_1.s            \
+    src/m4a.c              \
     src/crt0.s             \
+    src/rom_header.s       \
     src/agb_flash.c        \
     src/agb_flash_1m.c     \
     src/agb_flash_le.c     \
@@ -130,15 +145,20 @@ EXCLUDED_SET  := $(EXCLUDED_SRCS)
 GAME_C_SRCS   := $(filter-out $(EXCLUDED_SET), $(ALL_C_SRCS))
 GAME_ASM_SRCS := $(filter-out $(EXCLUDED_SET), $(ALL_ASM_SRCS))
 
+# data/*.s — GBA event scripts, text strings, battle scripts, sound data.
+# These use preproc -e to convert C enums → GAS .equiv directives before assembly.
+DATA_ASM_SRCS := $(shell find data -maxdepth 1 -name '*.s' | sort)
+
 ALL_SRCS := $(N64_SRCS) $(GAME_C_SRCS) $(GAME_ASM_SRCS)
 
 # ---------- Objects ---------------------------------------
 C_SRCS   := $(filter %.c,   $(ALL_SRCS))
 ASM_SRCS := $(filter %.s,   $(ALL_SRCS))
 
-C_OBJS   := $(patsubst %.c,   $(BUILD_DIR)/%.o, $(C_SRCS))
-ASM_OBJS := $(patsubst %.s,   $(BUILD_DIR)/%.o, $(ASM_SRCS))
-ALL_OBJS := $(C_OBJS) $(ASM_OBJS)
+C_OBJS      := $(patsubst %.c,   $(BUILD_DIR)/%.o, $(C_SRCS))
+ASM_OBJS    := $(patsubst %.s,   $(BUILD_DIR)/%.o, $(ASM_SRCS))
+DATA_OBJS   := $(patsubst data/%.s, $(BUILD_DIR)/data/%.o, $(DATA_ASM_SRCS))
+ALL_OBJS    := $(C_OBJS) $(ASM_OBJS) $(DATA_OBJS)
 
 # ---------- Build rules -----------------------------------
 .PHONY: all clean rom crc-tool
@@ -171,15 +191,35 @@ $(BUILD_DIR)/$(ELF_NAME): $(ALL_OBJS)
 	$(LD) $(ALL_OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@
 
-# Compile C (with dependency generation)
+# Compile C — run preproc first to handle INCBIN_* macros (embeds binary data)
+# Pipeline: C source → CPP preprocess → preproc (expands INCBIN to hex) → compile
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+	$(CC) $(CFLAGS) -E $< | $(PREPROC) -i $< $(CHARMAP) | sed 's/__asm__("svc [0-9]*")/__asm__("break")/g' | $(CC) $(CFLAGS) -MMD -MP -x c -c - -o $@
 
-# Assemble .s
+# Assemble .s (N64 platform sources)
 $(BUILD_DIR)/%.o: %.s
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -x assembler-with-cpp -c $< -o $@
+
+# Assemble data/*.s — GBA game data (scripts, text, battle animations, sound)
+# Pipeline: preproc (charmap) → host CPP (expand #includes, -e converts enums→.equiv) → preproc -ie → as
+# Note: $(AS) is the bare assembler; use only assembler-compatible flags (not GCC-only flags).
+AS_ARCH_FLAGS := -mips3 -mabi=32 -EL -G0
+$(BUILD_DIR)/data/%.o: data/%.s
+	@mkdir -p $(dir $@)
+	$(PREPROC) $< charmap.txt | gcc $(CPP_DATA_FLAGS) - | $(PREPROC) -ie $< charmap.txt | $(AS) $(AS_ARCH_FLAGS) -o $@
+
+# ---------- Data file generation rules ----------------------------
+# Generate 4bpp/8bpp/pal binary data from source files using gbagfx.
+# These are needed by INCBIN_U32 macros in game source files.
+%.4bpp:   %.png  ; $(GFX) $< $@
+%.8bpp:   %.png  ; $(GFX) $< $@
+%.gbapal: %.pal  ; $(GFX) $< $@
+%.gbapal: %.png  ; $(GFX) $< $@
+%.lz:     %      ; $(GFX) $< $@
+%.rl:     %      ; $(GFX) $< $@
+%.1bpp:   %.png  ; $(GFX) $< $@
 
 clean:
 	rm -rf $(BUILD_DIR)
