@@ -69,9 +69,13 @@
  * PIF command buffer — 64 bytes
  * Layout: controller command (4 bytes) + padding, terminated by 0xFE.
  * The SI copies this to PIF-RAM and executes the commands.
- * --------------------------------------------------------------------- */
-static u8 sPifCmd[64] __attribute__((aligned(16)));
-static u8 sPifRsp[64] __attribute__((aligned(16)));
+ *
+ * sPifRsp is accessed via an uncached KSEG1 alias to avoid stale cache
+ * entries after the SI DMA writes new button data to RDRAM.            */
+static u8 sPifCmd[64] __attribute__((aligned(64)));
+static u8 sPifRsp[64] __attribute__((aligned(64)));
+/* KSEG1 (uncached) alias: physical = virt & 0x1FFFFFFF, KSEG1 = | 0xA0000000 */
+#define UNCACHED(p) ((volatile u8 *)((uintptr_t)(p) | 0x20000000u))
 
 /* Controller data from the last completed read */
 static volatile u16 sN64Buttons = 0;
@@ -125,16 +129,36 @@ void N64_InitInput(void)
 /* -----------------------------------------------------------------------
  * N64_InputStartRead — initiate an SI DMA read from PIF-RAM
  * --------------------------------------------------------------------- */
+
+/* Byte-safe copy for PIF-RAM (big-endian peripheral).
+ * The CPU is little-endian (-EL); unaligned or word-level writes to
+ * 0xBFC007C0 would byte-swap within words.  Use byte-by-byte volatile
+ * writes to ensure the bytes land in the correct order.               */
+static inline void pif_write(const u8 *src, int len)
+{
+    volatile u8 *pif = N64_PIF_RAM;
+    for (int i = 0; i < len; i++)
+        pif[i] = src[i];
+}
+
+static inline void pif_read(u8 *dst, int len)
+{
+    volatile const u8 *pif = N64_PIF_RAM;
+    for (int i = 0; i < len; i++)
+        dst[i] = pif[i];
+}
+
 void N64_InputStartRead(void)
 {
     if (sReadPending)
         return;
 
-    /* Copy command block to PIF-RAM via SI write DMA */
-    memcpy((void *)N64_PIF_RAM, sPifCmd, 64);
+    /* Write command block to PIF-RAM byte-by-byte */
+    pif_write(sPifCmd, 64);
 
-    /* Start SI DMA: PIF-RAM → sPifRsp (in RDRAM) */
-    SI_REG_WR(SI_DRAM_ADDR_REG,  (u32)((uintptr_t)sPifRsp & 0x0FFFFFFF));
+    /* Start SI DMA: PIF-RAM → sPifRsp (in RDRAM).
+     * Physical RDRAM address = KSEG0 virtual & 0x1FFFFFFF.             */
+    SI_REG_WR(SI_DRAM_ADDR_REG,  (u32)((uintptr_t)sPifRsp & 0x1FFFFFFF));
     SI_REG_WR(SI_PIF_ADDR_RD64B, 0x1FC007C0); /* PIF-RAM physical address */
 
     sReadPending = 1;
@@ -156,11 +180,12 @@ void N64_ControllerReadDone(void)
      *   sPifRsp[4] = buttons low byte
      *   sPifRsp[5] = analog X (signed)
      *   sPifRsp[6] = analog Y (signed)
-     */
-    u16 buttons = ((u16)sPifRsp[3] << 8) | (u16)sPifRsp[4];
+     * Read via uncached KSEG1 alias to bypass stale cache lines.       */
+    volatile u8 *rsp = UNCACHED(sPifRsp);
+    u16 buttons = ((u16)rsp[3] << 8) | (u16)rsp[4];
     sN64Buttons = buttons;
-    sAnalogX    = (s8)sPifRsp[5];
-    sAnalogY    = (s8)sPifRsp[6];
+    sAnalogX    = (s8)rsp[5];
+    sAnalogY    = (s8)rsp[6];
 
     /* ------------------------------------------------------------------
      * Build GBA-style KEYINPUT (active-LOW: pressed = bit clear)
