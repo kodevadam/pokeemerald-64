@@ -114,8 +114,12 @@ void N64_DispatchIntr(void)
      * VI interrupt — VBlank / VCount / HBlank
      * ------------------------------------------------------------------ */
     if (miIntr & MI_INTR_VI) {
-        /* Acknowledge the VI interrupt by re-arming VI_INTR */
-        VI_INTR_LINE_WR(2);
+        /* Acknowledge the VI interrupt by writing to VI_CURRENT (0x10).
+         * Writing VI_INTR (0x0C) only sets the trigger line — it does NOT
+         * clear the pending interrupt.  VI_CURRENT must be written to
+         * de-assert the MI_INTR_VI line, otherwise the CPU re-takes the
+         * exception immediately after ERET and the main loop never runs. */
+        N64_HW_WR(N64_VI_BASE_REG, VI_CURRENT_REG, 0);
 
         /* The VI interrupt fires at half-line 2 — once per frame.
          * Treat every VI interrupt as the GBA VBlank event.
