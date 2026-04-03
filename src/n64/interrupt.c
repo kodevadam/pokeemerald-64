@@ -135,19 +135,16 @@ void N64_DispatchIntr(void)
 
         _REG16(REG_OFFSET_DISPSTAT) &= ~DISPSTAT_VBLANK;
 
-        /* Fire VCount interrupt if the game configured it for line 160   */
-        {
-            u16 vCountLine = (_REG16(REG_OFFSET_DISPSTAT) >> 8) & 0xFF;
-            if ((_REG16(REG_OFFSET_DISPSTAT) & DISPSTAT_VCOUNT_INTR)
-                && vCountLine == 160)
-            {
-                _REG16(REG_OFFSET_DISPSTAT) |= DISPSTAT_VCOUNT_MATCH;
-                if (gIntrTable[0])
-                    gIntrTable[0]();   /* VCountIntr */
-                _REG16(REG_OFFSET_DISPSTAT) &= ~DISPSTAT_VCOUNT_MATCH;
-                INTR_CHECK |= INTR_FLAG_VCOUNT;
-                gMain.intrCheck |= INTR_FLAG_VCOUNT;
-            }
+        /* Fire VCount interrupt every frame when enabled.
+         * N64 has no per-scanline interrupts; fire conceptually "at
+         * the configured line" which is always once per frame here.    */
+        if (_REG16(REG_OFFSET_DISPSTAT) & DISPSTAT_VCOUNT_INTR) {
+            _REG16(REG_OFFSET_DISPSTAT) |= DISPSTAT_VCOUNT_MATCH;
+            if (gIntrTable[0])
+                gIntrTable[0]();   /* VCountIntr */
+            _REG16(REG_OFFSET_DISPSTAT) &= ~DISPSTAT_VCOUNT_MATCH;
+            INTR_CHECK |= INTR_FLAG_VCOUNT;
+            gMain.intrCheck |= INTR_FLAG_VCOUNT;
         }
     }
 
