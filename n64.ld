@@ -105,9 +105,12 @@ SECTIONS
         . = ALIGN(8);
     } > ROM
 
-    /* GBA script/event/text data from data/*.s */
+    /* GBA script/event/text data from data/*.s
+     * NOTE: input sections are named "script_data" (no leading dot),
+     * so we capture both forms: with and without the leading dot.      */
     .script_data :
     {
+        *(script_data script_data.*)
         *(.script_data .script_data.*)
         . = ALIGN(8);
     } > ROM
@@ -117,9 +120,13 @@ SECTIONS
     /* ------------------------------------------------------------------ */
     .data :
     {
+        __data_start = .;
         *(.data .data.* .gnu.linkonce.d.*)
         . = ALIGN(8);
     } > RDRAM AT > ROM
+
+    /* LMA of the first data section (ROM address to copy from at boot)   */
+    __data_lma = LOADADDR(.data);
 
     /* GBA "EWRAM data" → maps to normal RDRAM                            */
     .ewram_data :
@@ -140,6 +147,7 @@ SECTIONS
     {
         *(.common_data)
         . = ALIGN(8);
+        __data_end = .;
     } > RDRAM AT > ROM
 
     /* ------------------------------------------------------------------ */

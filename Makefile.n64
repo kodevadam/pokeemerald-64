@@ -186,7 +186,7 @@ $(BUILD_DIR)/$(ROM_NAME): $(BUILD_DIR)/$(ELF_NAME)
 	$(CHKSUM64) $@
 	@echo "ROM built: $@ ($$(wc -c < $@) bytes)"
 
-$(BUILD_DIR)/$(ELF_NAME): $(ALL_OBJS)
+$(BUILD_DIR)/$(ELF_NAME): $(ALL_OBJS) n64.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(ALL_OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@

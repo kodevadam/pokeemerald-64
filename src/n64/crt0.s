@@ -56,6 +56,27 @@ __n64_boot:
     la      $gp, _gp
 
     /* -----------------------------------------------------------------------
+     * Copy initialised data sections from ROM (LMA) to RDRAM (VMA).
+     * Sections .data, .ewram_data, .iwram_data, .common_data are stored in
+     * ROM but must run from RDRAM.  __data_lma is the ROM source address
+     * (0xB0xxxxxx via KSEG1 PI bus), __data_start/__data_end are the RDRAM
+     * destination.  We read word-by-word from the uncached ROM address.
+     * --------------------------------------------------------------------- */
+    la      $t0, __data_lma     /* ROM source (KSEG1 uncached = 0xB0xxxxxx) */
+    la      $t1, __data_start   /* RDRAM destination VMA                    */
+    la      $t2, __data_end
+    beq     $t1, $t2, .Ldata_done
+    nop
+.Ldata_copy:
+    lw      $t3, 0($t0)
+    sw      $t3, 0($t1)
+    addiu   $t0, $t0, 4
+    addiu   $t1, $t1, 4
+    bne     $t1, $t2, .Ldata_copy
+    nop
+.Ldata_done:
+
+    /* -----------------------------------------------------------------------
      * Clear BSS
      * Linker exports __bss_start and __bss_end (8-byte aligned)
      * --------------------------------------------------------------------- */
