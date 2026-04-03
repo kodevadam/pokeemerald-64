@@ -43,13 +43,12 @@ extern void *__n64_vram_buf;   /* points to __sw_vram_start  in RDRAM   */
 extern void *__n64_oam_buf;    /* points to __sw_oam_start   in RDRAM   */
 
 /* Fixed RDRAM addresses for software GBA buffers.
- * These are compile-time constants so they can be used in static initializers.
- * The linker script places the buffers at exactly these addresses.
- * 0x80300000 = 3MB into RDRAM (code+data must fit below this) */
-#define N64_PLTT_BASE   0x80300000u
-#define N64_VRAM_BASE   0x80301000u   /* 1KB after PLTT (PLTT_SIZE = 0x400) */
-#define N64_OAM_BASE    0x80319000u   /* after VRAM (VRAM_SIZE = 0x18000) */
-#define N64_IOREGS_BASE 0x80319400u   /* after OAM (OAM_SIZE = 0x400) */
+ * These must match the n64.ld linker script (.sw_palette, .sw_vram, etc.)
+ * placed near the top of RDRAM (expansion pak region, 7MB+ mark).        */
+#define N64_PLTT_BASE   0x80790000u
+#define N64_VRAM_BASE   0x80791000u   /* 0x1000 after PLTT (PLTT_SIZE = 0x400) */
+#define N64_OAM_BASE    0x807A9000u   /* after VRAM (VRAM_SIZE = 0x18000) */
+#define N64_IOREGS_BASE 0x807A9400u   /* after OAM (OAM_SIZE = 0x400) */
 
 /* GBA-compatible address constants — now compile-time constants for N64 */
 #define PLTT          N64_PLTT_BASE

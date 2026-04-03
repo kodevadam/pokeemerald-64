@@ -114,45 +114,37 @@ void N64_DispatchIntr(void)
      * VI interrupt — VBlank / VCount / HBlank
      * ------------------------------------------------------------------ */
     if (miIntr & MI_INTR_VI) {
-        /* Acknowledge the VI interrupt by writing to VI_INTR */
-        VI_INTR_LINE_WR(0);
+        /* Acknowledge the VI interrupt by re-arming VI_INTR */
+        VI_INTR_LINE_WR(2);
 
-        u16 currentLine = (u16)(VI_CURRENT_RD() & 0x3FF);
-        gN64CurrentLine = currentLine;
+        /* The VI interrupt fires at half-line 2 — once per frame.
+         * Treat every VI interrupt as the GBA VBlank event.
+         * gIntrTable layout (from main.c gIntrTableTemplate):
+         *   [0] = VCountIntr, [1] = SerialIntr, [2] = Timer3Intr,
+         *   [3] = HBlankIntr, [4] = VBlankIntr                           */
+        gN64VBlankCount++;
+        gN64CurrentLine = 0;
+        _REG16(REG_OFFSET_VCOUNT)   = 0;
+        _REG16(REG_OFFSET_DISPSTAT) |= DISPSTAT_VBLANK;
 
-        /* Update software VCOUNT register */
-        _REG16(REG_OFFSET_VCOUNT) = currentLine;
+        N64_RtcVBlankTick();
 
-        if (currentLine == 0) {
-            /* ---- VBlank ---- */
-            _REG16(REG_OFFSET_DISPSTAT) |= DISPSTAT_VBLANK;
-            gN64VBlankCount++;
-            N64_RtcVBlankTick();
+        extern IntrFunc gIntrTable[];
+        if (gIntrTable[4])
+            gIntrTable[4]();   /* VBlankIntr */
 
-            /* Call game VBlank handler via gIntrTable (set up in main.c) */
-            /* gIntrTable[4] = VBlankIntr */
-            extern IntrFunc gIntrTable[];
-            if (gIntrTable[4])
-                gIntrTable[4]();
+        _REG16(REG_OFFSET_DISPSTAT) &= ~DISPSTAT_VBLANK;
 
-            INTR_CHECK |= INTR_FLAG_VBLANK;
-            gMain.intrCheck |= INTR_FLAG_VBLANK;
-        } else if (currentLine == 160) {
-            /* ---- VBlank start / VCount at line 160 ---- */
-            _REG16(REG_OFFSET_DISPSTAT) &= ~DISPSTAT_VBLANK;
-        }
-
-        /* VCount interrupt at the configured line */
+        /* Fire VCount interrupt if the game configured it for line 160   */
         {
             u16 vCountLine = (_REG16(REG_OFFSET_DISPSTAT) >> 8) & 0xFF;
             if ((_REG16(REG_OFFSET_DISPSTAT) & DISPSTAT_VCOUNT_INTR)
-                && currentLine == vCountLine)
+                && vCountLine == 160)
             {
                 _REG16(REG_OFFSET_DISPSTAT) |= DISPSTAT_VCOUNT_MATCH;
-                /* gIntrTable[0] = VCountIntr */
-                extern IntrFunc gIntrTable[];
                 if (gIntrTable[0])
-                    gIntrTable[0]();
+                    gIntrTable[0]();   /* VCountIntr */
+                _REG16(REG_OFFSET_DISPSTAT) &= ~DISPSTAT_VCOUNT_MATCH;
                 INTR_CHECK |= INTR_FLAG_VCOUNT;
                 gMain.intrCheck |= INTR_FLAG_VCOUNT;
             }

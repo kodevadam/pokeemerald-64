@@ -45,7 +45,10 @@ static inline u16 RGB555toRGBA5551(u16 gba)
     u16 r = (gba >>  0) & 0x1F;
     u16 g = (gba >>  5) & 0x1F;
     u16 b = (gba >> 10) & 0x1F;
-    return (u16)((r << 11) | (g << 6) | (b << 1) | 1);
+    u16 px = (u16)((r << 11) | (g << 6) | (b << 1) | 1);
+    /* N64 VI reads framebuffer in big-endian; CPU is little-endian (-EL).
+     * Byte-swap so the VI sees the correct channel layout.               */
+    return __builtin_bswap16(px);
 }
 
 /* -----------------------------------------------------------------------

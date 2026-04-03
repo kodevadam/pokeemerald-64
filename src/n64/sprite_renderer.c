@@ -55,7 +55,9 @@ static inline u16 RGB555toRGBA5551_spr(u16 gba)
     u16 r = (gba >>  0) & 0x1F;
     u16 g = (gba >>  5) & 0x1F;
     u16 b = (gba >> 10) & 0x1F;
-    return (u16)((r << 11) | (g << 6) | (b << 1) | 1);
+    u16 px = (u16)((r << 11) | (g << 6) | (b << 1) | 1);
+    /* N64 VI reads big-endian; byte-swap for little-endian CPU */
+    return __builtin_bswap16(px);
 }
 
 /* Window mask (also in tile_renderer.c — declared extern here) */
@@ -260,8 +262,10 @@ void N64_CompositeSprites(void)
                 /* Apply blending if this sprite is in OBJ blend mode */
                 u16 finalColour;
                 if (objMode == 1 && blendEff == 1 && evb > 0) {
-                    /* Semi-transparent sprite: blend with underlying pixel */
-                    u16 bgRGBA = fb[fbY * DISPLAY_WIDTH + fbX];
+                    /* Semi-transparent sprite: blend with underlying pixel.
+                     * Framebuffer pixels are byte-swapped RGBA5551; undo the
+                     * swap before extracting RGB555 channels.               */
+                    u16 bgRGBA = __builtin_bswap16(fb[fbY * DISPLAY_WIDTH + fbX]);
                     /* Convert back from RGBA5551 to RGB555 for blending */
                     u16 bgRGB555 = ((bgRGBA >> 11) & 0x1F)
                                  | (((bgRGBA >> 6) & 0x1F) << 5)

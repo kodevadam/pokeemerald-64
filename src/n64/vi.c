@@ -69,8 +69,9 @@ void N64_InitVI(void)
     /* VI_WIDTH: line width in pixels */
     VI_WR(VI_WIDTH_REG,   N64_VI_WIDTH);
 
-    /* VI_INTR: interrupt at line 2 (near top) */
-    VI_WR(VI_INTR_REG,    0x00000200);
+    /* VI_INTR: interrupt at half-line 2 — fires once per frame at the very
+     * start of the next field, used as our VBlank event.               */
+    VI_WR(VI_INTR_REG,    0x00000002);
 
     /* VI_CURRENT: clear */
     VI_WR(0x10, 0);
