@@ -176,6 +176,19 @@ void N64Main(void)
     N64_EnableCPUInterrupts();
 
     /* ------------------------------------------------------------------
+     * Seed the software TM1CNT_L register with the N64 CP0 Count register
+     * so that SeedRngAndSetTrainerId() in main.c gets a non-zero seed.
+     * CP0 Count increments at 46.875 MHz from CPU reset; by this point
+     * a few milliseconds have elapsed giving a non-deterministic value.
+     * ------------------------------------------------------------------ */
+    {
+        u32 count;
+        asm volatile ("mfc0 %0, $9" : "=r"(count));
+        extern u8 gN64IoRegs[];
+        *(u16 *)(gN64IoRegs + 0x104) = (u16)(count ^ (count >> 16));
+    }
+
+    /* ------------------------------------------------------------------
      * Hand off to the game's main function.
      * AgbMain() contains the game loop and never returns.
      * ------------------------------------------------------------------ */
