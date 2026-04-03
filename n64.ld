@@ -77,6 +77,7 @@ SECTIONS
     /* ------------------------------------------------------------------ */
     .text :
     {
+        __text_start = .;
         *(.text.unlikely .text.*_unlikely .text.unlikely.*)
         *(.text.exit .text.exit.*)
         *(.text.startup .text.startup.*)
@@ -84,7 +85,11 @@ SECTIONS
         *(.text .stub .text.* .gnu.linkonce.t.*)
         KEEP(*(.text.*))
         . = ALIGN(8);
+        __text_end = .;
     } > RDRAM AT > ROM
+
+    /* LMA of the text section (ROM address to copy from at boot) */
+    __text_lma = LOADADDR(.text);
 
     /* ------------------------------------------------------------------ */
     /*  Read-only game data: stays in ROM, accessed via KSEG1 PI bus.     */

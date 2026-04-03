@@ -56,6 +56,56 @@ __n64_boot:
     la      $gp, _gp
 
     /* -----------------------------------------------------------------------
+     * Copy the .text section from ROM (LMA) to RDRAM (VMA).
+     *
+     * The N64 IPL3 only copies the first 1MB of ROM to RDRAM[0x80000000].
+     * Our .text section is ~2.9MB.  Functions past the 1MB mark (e.g.
+     * AgbMain at 0x801c4f18) are NOT in RDRAM after IPL3.  We must copy
+     * the full section here before calling any C function.
+     *
+     * We copy word-by-word from the KSEG1 uncached ROM PI bus address
+     * (__text_lma = 0xB0001700) to the RDRAM VMA (__text_start = 0x80000700).
+     * This overwrites the 1MB already copied by IPL3 with identical data —
+     * harmless but correct.
+     * --------------------------------------------------------------------- */
+    la      $t0, __text_lma     /* ROM source (KSEG1 uncached PI bus)       */
+    la      $t1, __text_start   /* RDRAM destination VMA                    */
+    la      $t2, __text_end
+    beq     $t1, $t2, .Ltext_done
+    nop
+.Ltext_copy:
+    lw      $t3, 0($t0)
+    sw      $t3, 0($t1)
+    addiu   $t0, $t0, 4
+    addiu   $t1, $t1, 4
+    bne     $t1, $t2, .Ltext_copy
+    nop
+.Ltext_done:
+
+    /* Writeback and invalidate dcache for the written .text range.
+     * CACHE 0x15 = HIT_WRITEBACK_INVALIDATE_D: flushes dirty dcache lines
+     * to RDRAM so the icache can read the correct code bytes.              */
+    sync
+    la      $t0, __text_start
+    la      $t1, __text_end
+.Ltext_dcache_flush:
+    cache   0x15, 0($t0)
+    addiu   $t0, $t0, 32
+    bne     $t0, $t1, .Ltext_dcache_flush
+    nop
+
+    /* Invalidate instruction cache over the full .text range.
+     * CACHE 0x10 = HIT_INVALIDATE_I: forces the icache to re-fill from
+     * RDRAM, which now has the correct code bytes.                         */
+    la      $t0, __text_start
+    la      $t1, __text_end
+.Ltext_icache_flush:
+    cache   0x10, 0($t0)
+    addiu   $t0, $t0, 32
+    bne     $t0, $t1, .Ltext_icache_flush
+    nop
+
+    /* -----------------------------------------------------------------------
      * Copy initialised data sections from ROM (LMA) to RDRAM (VMA).
      * Sections .data, .ewram_data, .iwram_data, .common_data are stored in
      * ROM but must run from RDRAM.  __data_lma is the ROM source address
