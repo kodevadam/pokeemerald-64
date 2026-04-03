@@ -204,8 +204,8 @@ typedef struct {
 } Dma3Request;
 
 static Dma3Request sDma3Queue[DMA3_QUEUE_SIZE];
-static volatile int sDma3Head = 0;
-static volatile int sDma3Tail = 0;
+volatile int sDma3Head = 0;
+volatile int sDma3Tail = 0;
 
 void N64_DmaSet(int dmaNum, const void *src, void *dst, u32 control)
 {

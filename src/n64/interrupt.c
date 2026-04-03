@@ -27,6 +27,8 @@
 #include "global.h"
 #include "n64/asm_defs.h"
 
+extern void N64_RtcVBlankTick(void);
+
 /* -----------------------------------------------------------------------
  * N64 hardware register access helpers
  * All N64 MMIO registers are 32-bit, memory-mapped at KSEG1 (uncached).
@@ -128,6 +130,7 @@ void N64_DispatchIntr(void)
             /* ---- VBlank ---- */
             _REG16(REG_OFFSET_DISPSTAT) |= DISPSTAT_VBLANK;
             gN64VBlankCount++;
+            N64_RtcVBlankTick();
 
             /* Call game VBlank handler via gIntrTable (set up in main.c) */
             /* gIntrTable[4] = VBlankIntr */

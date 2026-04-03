@@ -148,22 +148,6 @@ void N64_InitFlashRAM(void)
 }
 
 /* -----------------------------------------------------------------------
- * CheckForFlashMemory — called from AgbMain() (main.c)
- *
- * Sets gFlashMemoryPresent so that the game knows save is available.
- * --------------------------------------------------------------------- */
-extern bool8 gFlashMemoryPresent;
-
-void CheckForFlashMemory(void)
-{
-    gFlashMemoryPresent = sFlashRAMPresent ? TRUE : FALSE;
-    if (!sFlashRAMPresent) {
-        /* No FlashRAM: disable save functions gracefully */
-        gFlashMemoryPresent = FALSE;
-    }
-}
-
-/* -----------------------------------------------------------------------
  * ReadFlash — read 'size' bytes from flash offset 'src' into 'dst'
  *
  * Replaces the GBA ReadFlash() / ReadFlash16() functions.
@@ -328,13 +312,97 @@ void N64_PiDmaDone(void)
  * We re-export the symbols it would have defined.
  * --------------------------------------------------------------------- */
 
-/* Flash "type" descriptor — the game uses this to select flash routines.
- * We return a synthetic descriptor that causes the game to call our
- * functions above. */
-const struct FlashType gFlashType = {
-    .wait      = {0, 0},
-    .maxTime   = {10000, 10000, 200000},
+/* -----------------------------------------------------------------------
+ * GBA flash_internal.h extern symbols
+ *
+ * agb_flash.c is excluded from the N64 build.  We define the symbols it
+ * would have exported so that save.c and the rest of the game compile.
+ * --------------------------------------------------------------------- */
+
+/* Flash chip descriptor pointer used by some paths */
+static const struct FlashType sN64FlashType = {
+    .romSize = FLASHRAM_SIZE,
+    .sector  = { .size = FLASHRAM_SECTOR_SIZE, .shift = 7,
+                 .count = FLASHRAM_NUM_SECTORS, .top = 0 },
+    .wait    = {0, 0},
+    .ids     = { .separate = {0xC2, 0x09} },   /* Macronix MX29L010 IDs */
 };
+const struct FlashType *gFlash = &sN64FlashType;
+
+/* Function-pointer API that save.c invokes via the GBA flash driver */
+u16 gFlashNumRemainingBytes = 0;
+u8  gFlashTimeoutFlag       = 0;
+
+static const u16 sN64MaxTime[] = {10000, 10000, 200000};
+const u16 *gFlashMaxTime = sN64MaxTime;
+
+/* ProgramFlashByte — write a single byte (wrapper around WriteFlash) */
+static u16 N64_ProgramFlashByte(u16 sectorNum, u32 offset, u8 data)
+{
+    return (u16)WriteFlash(sectorNum, offset, &data, 1);
+}
+u16 (*ProgramFlashByte)(u16, u32, u8) = N64_ProgramFlashByte;
+
+/* ProgramFlashSector (function pointer version) — write whole sector */
+static u16 N64_ProgramFlashSectorFP(u16 sectorNum, u8 *src)
+{
+    return (u16)ProgramFlashSector(sectorNum, src);
+}
+u16 (*ProgramFlashSectorFP)(u16, u8 *) = N64_ProgramFlashSectorFP;
+
+/* EraseFlashSector function pointer */
+static u16 N64_EraseFlashSectorFP(u16 sectorNum)
+{
+    return (u16)EraseFlashSector(sectorNum);
+}
+u16 (*EraseFlashSector_FP)(u16) = N64_EraseFlashSectorFP;
+
+/* EraseFlashChip function pointer */
+static u16 N64_EraseFlashChipFP(void)
+{
+    return (u16)EraseFlashChip();
+}
+u16 (*EraseFlashChip_FP)(void) = N64_EraseFlashChipFP;
+
+/* WaitForFlashWrite — no-op on N64 (writes complete synchronously) */
+static u16 N64_WaitForFlashWrite(u8 phase, u8 *addr, u8 lastData)
+{
+    (void)phase; (void)addr; (void)lastData;
+    return 0;
+}
+u16 (*WaitForFlashWrite)(u8, u8 *, u8) = N64_WaitForFlashWrite;
+
+/* PollFlashStatus — always returns 0 (ready) on N64 */
+static u8 N64_PollFlashStatus(u8 *addr)
+{
+    (void)addr;
+    return 0;
+}
+u8 (*PollFlashStatus)(u8 *) = N64_PollFlashStatus;
+
+/* ProgramFlashSectorAndVerify — erase, program, then verify */
+u32 ProgramFlashSectorAndVerify(u16 sectorNum, u8 *src)
+{
+    EraseFlashSector(sectorNum);
+    u32 result = ProgramFlashSector(sectorNum, src);
+    if (result != 0) return result;
+    return VerifyFlashSector(sectorNum, src, FLASHRAM_SECTOR_SIZE);
+}
+
+/* SetFlashTimerIntr / IdentifyFlash / WaitForFlashWrite_Common — no-ops */
+u16 SetFlashTimerIntr(u8 timerNum, void (**intrFunc)(void))
+{
+    (void)timerNum; (void)intrFunc;
+    return 0;
+}
+
+u16 IdentifyFlash(void) { return 0; }
+
+u16 WaitForFlashWrite_Common(u8 phase, u8 *addr, u8 lastData)
+{
+    (void)phase; (void)addr; (void)lastData;
+    return 0;
+}
 
 /* VerifyFlashSector — compare written data against source */
 u32 VerifyFlashSector(u16 sectorNum, const u8 *src, u32 size)

@@ -177,8 +177,83 @@ void SiiRtcProtect(void)
 }
 
 /* -----------------------------------------------------------------------
- * Stub for siirtc.c functions that are excluded from the N64 build
+ * Stubs for siirtc.c functions (excluded from N64 build)
  * --------------------------------------------------------------------- */
-void SiiRtcUnprotect(void) {}
-void SiiRtcGetRawInfo(struct SiiRtcInfo *rtc) { RtcGetInfo(rtc); }
-bool8 SiiRtcProbe(void) { return TRUE; }
+void  SiiRtcUnprotect(void)                         {}
+void  SiiRtcGetRawInfo(struct SiiRtcInfo *rtc)      { RtcGetInfo(rtc); }
+bool8 SiiRtcProbe(void)                             { return TRUE; }
+void  SiiRtcGetDateTime(struct SiiRtcInfo *rtc)     { RtcGetInfo(rtc); }
+void  SiiRtcGetTime(struct SiiRtcInfo *rtc)         { RtcGetInfo(rtc); }
+void  SiiRtcGetStatus(struct SiiRtcInfo *rtc)       { (void)rtc; }
+u8    SiiRtcGetErrorStatus(struct SiiRtcInfo *rtc)  { (void)rtc; return 0; }
+bool8 SiiRtcSetDateTime(struct SiiRtcInfo *rtc)     { (void)rtc; return TRUE; }
+
+/* -----------------------------------------------------------------------
+ * Full rtc.c replacements (rtc.c is excluded from N64 build)
+ * --------------------------------------------------------------------- */
+void RtcDisableInterrupts(void) {}
+void RtcRestoreInterrupts(void) {}
+
+u32 ConvertBcdToBinary(u8 bcd)
+{
+    return (bcd >> 4) * 10 + (bcd & 0x0F);
+}
+
+bool8 IsLeapYear(u32 year)
+{
+    return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+}
+
+u16 ConvertDateToDayCount(u8 year, u8 month, u8 day)
+{
+    static const u16 sDaysByMonth[12] = {0,31,59,90,120,151,181,212,243,273,304,334};
+    u16 yr = 2000 + year;
+    u16 days = (u16)(yr * 365 + yr / 4 - yr / 100 + yr / 400);
+    days += sDaysByMonth[month > 0 ? month - 1 : 0];
+    if (month > 2 && IsLeapYear(yr)) days++;
+    days += day;
+    return days;
+}
+
+u16 RtcGetDayCount(struct SiiRtcInfo *rtc)
+{
+    return ConvertDateToDayCount(rtc->year, rtc->month, rtc->day);
+}
+
+u16 RtcGetErrorStatus(void) { return 0; }
+
+void RtcGetStatus(struct SiiRtcInfo *rtc)
+{
+    SiiRtcGetStatus(rtc);
+}
+
+void RtcGetRawInfo(struct SiiRtcInfo *rtc)
+{
+    RtcGetInfo(rtc);
+}
+
+u16 RtcCheckInfo(struct SiiRtcInfo *rtc)
+{
+    (void)rtc;
+    return 0;  /* no error */
+}
+
+void RtcCalcTimeDifference(struct SiiRtcInfo *rtc, struct Time *result, struct Time *t)
+{
+    (void)rtc; (void)result; (void)t;
+}
+
+void RtcInitLocalTimeOffset(s32 hour, s32 minute)
+{
+    (void)hour; (void)minute;
+}
+
+void RtcCalcLocalTimeOffset(s32 days, s32 hours, s32 minutes, s32 seconds)
+{
+    (void)days; (void)hours; (void)minutes; (void)seconds;
+}
+
+void CalcTimeDifference(struct Time *result, struct Time *t1, struct Time *t2)
+{
+    (void)result; (void)t1; (void)t2;
+}

@@ -95,7 +95,9 @@ void AgbMain(void)
 #endif //MODERN
     *(vu16 *)BG_PLTT = RGB_WHITE; // Set the backdrop to white on startup
     InitGpuRegManager();
+#if !defined(N64_PORT) || !N64_PORT
     REG_WAITCNT = WAITCNT_PREFETCH_ENABLE | WAITCNT_WS0_S_1 | WAITCNT_WS0_N_3;
+#endif
     InitKeys();
     InitIntrHandlers();
     m4aSoundInit();
@@ -298,17 +300,21 @@ void InitIntrHandlers(void)
     for (i = 0; i < INTR_COUNT; i++)
         gIntrTable[i] = gIntrTableTemplate[i];
 
+#if !defined(N64_PORT) || !N64_PORT
     DmaCopy32(3, IntrMain, IntrMain_Buffer, sizeof(IntrMain_Buffer));
 
     INTR_VECTOR = IntrMain_Buffer;
+#endif
 
     SetVBlankCallback(NULL);
     SetHBlankCallback(NULL);
     SetSerialCallback(NULL);
 
+#if !defined(N64_PORT) || !N64_PORT
     REG_IME = 1;
 
     EnableInterrupts(INTR_FLAG_VBLANK);
+#endif
 }
 
 void SetVBlankCallback(IntrCallback callback)
@@ -427,14 +433,18 @@ void ClearTrainerHillVBlankCounter(void)
 
 void DoSoftReset(void)
 {
+#if !defined(N64_PORT) || !N64_PORT
     REG_IME = 0;
+#endif
     m4aSoundVSyncOff();
     ScanlineEffect_Stop();
     DmaStop(1);
     DmaStop(2);
     DmaStop(3);
+#if !defined(N64_PORT) || !N64_PORT
     SiiRtcProtect();
     SoftReset(RESET_ALL);
+#endif
 }
 
 void ClearPokemonCrySongs(void)

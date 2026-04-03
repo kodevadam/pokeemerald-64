@@ -85,7 +85,10 @@ N64_SRCS := \
     src/n64/flashram.c     \
     src/n64/dma3_stub.c    \
     src/n64/gpu_regs_n64.c \
-    src/n64/rtc_stub.c
+    src/n64/rtc_stub.c     \
+    src/n64/link_stub.c    \
+    src/n64/scanline_effect_n64.c \
+    src/n64/rom_header.s
 
 # Game sources — everything in src/ except files we replace
 # Exclude GBA-specific hardware files that are superseded by N64 equivalents
@@ -100,7 +103,17 @@ EXCLUDED_SRCS := \
     src/siirtc.c           \
     src/librfu_sio32id.c   \
     src/librfu_rfu.c       \
-    src/librfu_intr.c
+    src/librfu_intr.c      \
+    src/librfu_stwi.c      \
+    src/gpu_regs.c         \
+    src/link.c             \
+    src/link_rfu_2.c       \
+    src/link_rfu_3.c       \
+    src/scanline_effect.c  \
+    src/rtc.c              \
+    src/libisagbprn.c      \
+    src/multiboot.c        \
+    src/dma3_manager.c
 
 # All C sources from src/ (excluding replaced files)
 ALL_C_SRCS    := $(shell find src -maxdepth 1 -name '*.c' | sort)

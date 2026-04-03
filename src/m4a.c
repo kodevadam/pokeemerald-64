@@ -327,7 +327,9 @@ void MPlayExtender(struct CgbChannel *cgbChans)
 
 static void UNUSED MusicPlayerJumpTableCopy(void)
 {
+#if !defined(N64_PORT) || !N64_PORT
     asm("swi 0x2A");
+#endif
 }
 
 void ClearChain(void *x)
