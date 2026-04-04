@@ -16,8 +16,9 @@
  * Framebuffer: physical 0x00100000 (KSEG0 0x80100000, KSEG1 0xA0100000)
  *   - safely above the 1 MB IPL3 copy (0x80000000–0x80100000)
  *   - 320×240×2 = 153 600 bytes → ends at 0x00125800 (well within 4 MB)
- *   - VI_STATUS uses serrate=1 (480i interlaced) to match libdragon's init,
- *     which is what most displays expect from N64 hardware output.
+ *   - VI timing uses libdragon's vi_ntsc_i preset (interlaced 480i):
+ *     VI_STATUS=0x324E (serrate=1), VI_V_SYNC=0x020C, VI_V_START=0x002301FD
+ *     The progressive values (0x020D / 0x002501FF) break VI sync in interlaced mode.
  */
 
     .set noreorder
@@ -98,8 +99,8 @@ _start:
     li      $t1, 0x03E52239
     sw      $t1, 0x14($t0)          /* VI_BURST  (NTSC timing)                */
 
-    li      $t1, 0x0000020D
-    sw      $t1, 0x18($t0)          /* VI_V_SYNC (525 half-lines NTSC)        */
+    li      $t1, 0x0000020C
+    sw      $t1, 0x18($t0)          /* VI_V_SYNC (524 half-lines, NTSC interlaced) */
 
     li      $t1, 0x00000C15
     sw      $t1, 0x1C($t0)          /* VI_H_SYNC                              */
@@ -110,8 +111,8 @@ _start:
     li      $t1, 0x006C02EC
     sw      $t1, 0x24($t0)          /* VI_H_START                             */
 
-    li      $t1, 0x002501FF
-    sw      $t1, 0x28($t0)          /* VI_V_START                             */
+    li      $t1, 0x002301FD
+    sw      $t1, 0x28($t0)          /* VI_V_START (interlaced: 0x23..0x1FD)   */
 
     li      $t1, 0x000E0204
     sw      $t1, 0x2C($t0)          /* VI_V_BURST                             */
