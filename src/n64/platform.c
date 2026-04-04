@@ -17,9 +17,10 @@
 #include "malloc.h"
 
 /* -----------------------------------------------------------------------
- * IS-Viewer64 debug output — readable live via "sc64deployer debug"
+ * IS-Viewer64 debug output (works on emulators with ISV support)
  * Physical 0x13FF0014 = write-length trigger
  * Physical 0x13FF0020 = string buffer
+ * CPU and PI bus are both big-endian (-EB); write directly, no bswap.
  * --------------------------------------------------------------------- */
 void N64_DebugPrint(const char *str)
 {
@@ -28,8 +29,6 @@ void N64_DebugPrint(const char *str)
     u32 len = 0;
     while (str[len]) { isv_buf[len] = (u8)str[len]; len++; }
     isv_buf[len++] = '\n';
-    /* CPU is compiled big-endian (-EB); the PI bus (IS-Viewer64) is also
-     * big-endian.  Write the length directly — no byte-swap needed. */
     *isv_len = len;
 }
 
@@ -184,6 +183,21 @@ void N64Main(void)
     N64_InitPI();   N64_DebugPrint("[N64] InitPI done");
     N64_InitSP();   N64_DebugPrint("[N64] InitSP done");
     N64_InitVI();   N64_DebugPrint("[N64] InitVI done");
+
+    /* ---------------------------------------------------------------
+     * BOOT DIAGNOSTIC: fill both framebuffers with solid bright red.
+     * If the screen shows red, VI is alive and boot reached this point.
+     * The game will overwrite this with real content within ~1 second.
+     * RGBA5551: R=31,G=0,B=0,A=1 = 0xF801
+     * --------------------------------------------------------------- */
+    {
+        u16 *fb0 = (u16 *)__fb0_start;
+        u16 *fb1 = (u16 *)__fb1_start;
+        for (int i = 0; i < 320 * 240; i++) {
+            fb0[i] = 0xF801;
+            fb1[i] = 0xF801;
+        }
+    }
     N64_InitAI();   N64_DebugPrint("[N64] InitAI done");
     N64_InitInput();N64_DebugPrint("[N64] InitInput done");
     N64_InitFlashRAM(); N64_DebugPrint("[N64] InitFlashRAM done");
