@@ -131,6 +131,14 @@ void N64_DispatchIntr(void)
         _REG16(REG_OFFSET_VCOUNT)   = 0;
         _REG16(REG_OFFSET_DISPSTAT) |= DISPSTAT_VBLANK;
 
+        /* Print once at frame 1, 10, 60 so we can confirm VI is firing */
+        if (gN64VBlankCount == 1 || gN64VBlankCount == 10 || gN64VBlankCount == 60) {
+            extern void N64_DebugPrint(const char *);
+            if      (gN64VBlankCount == 1)  N64_DebugPrint("[N64] VBlank #1 fired");
+            else if (gN64VBlankCount == 10) N64_DebugPrint("[N64] VBlank #10 fired");
+            else                            N64_DebugPrint("[N64] VBlank #60 fired");
+        }
+
         N64_RtcVBlankTick();
 
         extern IntrFunc gIntrTable[];

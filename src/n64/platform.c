@@ -17,6 +17,21 @@
 #include "malloc.h"
 
 /* -----------------------------------------------------------------------
+ * IS-Viewer64 debug output — readable live via "sc64deployer debug"
+ * Physical 0x13FF0014 = write-length trigger
+ * Physical 0x13FF0020 = string buffer
+ * --------------------------------------------------------------------- */
+void N64_DebugPrint(const char *str)
+{
+    volatile u32 *isv_len = (volatile u32 *)0xB3FF0014;
+    volatile u8  *isv_buf = (volatile u8  *)0xB3FF0020;
+    u32 len = 0;
+    while (str[len]) { isv_buf[len] = (u8)str[len]; len++; }
+    isv_buf[len++] = '\n';
+    *isv_len = len;
+}
+
+/* -----------------------------------------------------------------------
  * Linker-exported symbols (from n64.ld)
  * --------------------------------------------------------------------- */
 extern u8  __sw_palette_start[];
@@ -162,14 +177,15 @@ void N64Main(void)
      *   8. FlashRAM — detects save media
      *   9. CPU interrupts — enable last
      * ------------------------------------------------------------------ */
-    N64_InitMI();
-    N64_InitPI();
-    N64_InitSP();
-    N64_InitVI();
-    N64_InitAI();
-    N64_InitInput();
-    N64_InitFlashRAM();
-    N64_EnableCPUInterrupts();
+    N64_DebugPrint("[N64] N64Main: start");
+    N64_InitMI();   N64_DebugPrint("[N64] InitMI done");
+    N64_InitPI();   N64_DebugPrint("[N64] InitPI done");
+    N64_InitSP();   N64_DebugPrint("[N64] InitSP done");
+    N64_InitVI();   N64_DebugPrint("[N64] InitVI done");
+    N64_InitAI();   N64_DebugPrint("[N64] InitAI done");
+    N64_InitInput();N64_DebugPrint("[N64] InitInput done");
+    N64_InitFlashRAM(); N64_DebugPrint("[N64] InitFlashRAM done");
+    N64_EnableCPUInterrupts(); N64_DebugPrint("[N64] CPU interrupts enabled");
 
     /* ------------------------------------------------------------------
      * Seed the software TM1CNT_L register with the N64 CP0 Count register
@@ -188,6 +204,7 @@ void N64Main(void)
      * Hand off to the game's main function.
      * AgbMain() contains the game loop and never returns.
      * ------------------------------------------------------------------ */
+    N64_DebugPrint("[N64] calling AgbMain");
     AgbMain();
 
     /* Should never reach here */
