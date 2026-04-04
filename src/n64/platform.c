@@ -28,7 +28,10 @@ void N64_DebugPrint(const char *str)
     u32 len = 0;
     while (str[len]) { isv_buf[len] = (u8)str[len]; len++; }
     isv_buf[len++] = '\n';
-    *isv_len = len;
+    /* Length must be written big-endian for the PI bus (SC64 is a BE device).
+     * Without __builtin_bswap32, the LE CPU writes e.g. 0x0A at the lowest
+     * address, which the SC64 reads as 0x0A000000 — far too large to output. */
+    *isv_len = __builtin_bswap32(len);
 }
 
 /* -----------------------------------------------------------------------

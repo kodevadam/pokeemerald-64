@@ -56,30 +56,83 @@ __n64_boot:
     la      $gp, _gp
 
     /* -----------------------------------------------------------------------
-     * Copy the .text section from ROM (LMA) to RDRAM (VMA).
+     * Copy .text from ROM (LMA) to RDRAM (VMA) using PI DMA.
      *
-     * The N64 IPL3 only copies the first 1MB of ROM to RDRAM[0x80000000].
-     * Our .text section is ~2.9MB.  Functions past the 1MB mark (e.g.
-     * AgbMain at 0x801c4f18) are NOT in RDRAM after IPL3.  We must copy
-     * the full section here before calling any C function.
+     * CPU word-by-word reads from KSEG1 (PI bus) take ~4 µs each.
+     * For 2.85 MB that is 10+ seconds of black screen before boot.
+     * PI DMA (Cart→DRAM) transfers at ~50 MB/s — about 60 ms total.
      *
-     * We copy word-by-word from the KSEG1 uncached ROM PI bus address
-     * (__text_lma = 0xB0001700) to the RDRAM VMA (__text_start = 0x80000700).
-     * This overwrites the 1MB already copied by IPL3 with identical data —
-     * harmless but correct.
+     * PI DMA register layout (base 0xA4600000, big-endian):
+     *   +0x00  PI_DRAM_ADDR  — physical RDRAM destination
+     *   +0x04  PI_CART_ADDR  — physical cart source (0x10000000 + ROM offset)
+     *   +0x08  PI_RD_LEN     — (length-1); writing triggers Cart→DRAM DMA
+     *   +0x10  PI_STATUS     — bit0=DMA_BUSY, bit1=IO_BUSY; write 2=clr_intr
+     *
+     * The N64 PI registers are big-endian.  Our CPU is little-endian (-EL).
+     * Every register store must write __builtin_bswap32(value); reads must
+     * shift right 24 to extract the actual LSB from the LE-read word.
+     * The BSWAP32 macro does the runtime swap in 9 instructions.
      * --------------------------------------------------------------------- */
-    la      $t0, __text_lma     /* ROM source (KSEG1 uncached PI bus)       */
-    la      $t1, __text_start   /* RDRAM destination VMA                    */
-    la      $t2, __text_end
-    beq     $t1, $t2, .Ltext_done
+
+    /* Macro: byte-swap \src → \dst, uses \tmp as scratch (9 insns) */
+    .macro  BSWAP32 dst, src, tmp
+    sll     \dst, \src, 24
+    srl     \tmp, \src, 24
+    or      \dst, \dst, \tmp
+    srl     \tmp, \src, 8
+    andi    \tmp, \tmp, 0xFF00
+    or      \dst, \dst, \tmp
+    andi    \tmp, \src, 0xFF00
+    sll     \tmp, \tmp, 8
+    or      \dst, \dst, \tmp
+    .endm
+
+    li      $t4, 0xA4600000    /* PI_BASE (KSEG1 uncached)                  */
+    li      $t5, 0x1FFFFFFF    /* physical-address mask                     */
+
+    /* Wait for PI idle (in case IPL3 DMA is still finishing) */
+.Lpi_idle_text:
+    lw      $t6, 0x10($t4)     /* read PI_STATUS in LE; actual = bswap(t6)  */
+    srl     $t6, $t6, 24       /* actual bits[7:0] are in our bits[31:24]   */
+    andi    $t6, $t6, 0x03     /* DMA_BUSY(b0) | IO_BUSY(b1)                */
+    bnez    $t6, .Lpi_idle_text
     nop
-.Ltext_copy:
-    lw      $t3, 0($t0)
-    sw      $t3, 0($t1)
-    addiu   $t0, $t0, 4
-    addiu   $t1, $t1, 4
-    bne     $t1, $t2, .Ltext_copy
+
+    /* Clear any pending PI interrupt */
+    li      $t6, 0x02000000    /* bswap(2): write so hardware sees 0x2      */
+    sw      $t6, 0x10($t4)
+
+    /* PI_DRAM_ADDR = physical(__text_start) */
+    la      $t0, __text_start
+    and     $t0, $t0, $t5      /* strip KSEG bits → physical                */
+    BSWAP32 $t6, $t0, $t7
+    sw      $t6, 0x00($t4)
+
+    /* PI_CART_ADDR = physical(__text_lma) */
+    la      $t0, __text_lma
+    and     $t0, $t0, $t5
+    BSWAP32 $t6, $t0, $t7
+    sw      $t6, 0x04($t4)
+
+    /* PI_RD_LEN = (__text_end - __text_start) - 1  → triggers Cart→DRAM   */
+    la      $t0, __text_end
+    la      $t1, __text_start
+    subu    $t0, $t0, $t1      /* length                                    */
+    addiu   $t0, $t0, -1       /* length - 1                                */
+    BSWAP32 $t6, $t0, $t7
+    sw      $t6, 0x08($t4)     /* write PI_RD_LEN — DMA starts now          */
+
+    /* Wait for DMA to complete */
+.Lpi_wait_text:
+    lw      $t6, 0x10($t4)
+    srl     $t6, $t6, 24
+    andi    $t6, $t6, 0x01     /* DMA_BUSY                                  */
+    bnez    $t6, .Lpi_wait_text
     nop
+
+    /* Clear PI interrupt */
+    li      $t6, 0x02000000
+    sw      $t6, 0x10($t4)
 .Ltext_done:
 
     /* Writeback and invalidate dcache for the written .text range.
@@ -106,24 +159,49 @@ __n64_boot:
     nop
 
     /* -----------------------------------------------------------------------
-     * Copy initialised data sections from ROM (LMA) to RDRAM (VMA).
-     * Sections .data, .ewram_data, .iwram_data, .common_data are stored in
-     * ROM but must run from RDRAM.  __data_lma is the ROM source address
-     * (0xB0xxxxxx via KSEG1 PI bus), __data_start/__data_end are the RDRAM
-     * destination.  We read word-by-word from the uncached ROM address.
+     * Copy initialised data sections from ROM (LMA) to RDRAM using PI DMA.
      * --------------------------------------------------------------------- */
-    la      $t0, __data_lma     /* ROM source (KSEG1 uncached = 0xB0xxxxxx) */
-    la      $t1, __data_start   /* RDRAM destination VMA                    */
-    la      $t2, __data_end
-    beq     $t1, $t2, .Ldata_done
+    la      $t0, __data_start
+    la      $t1, __data_end
+    subu    $t2, $t1, $t0      /* length */
+    beqz    $t2, .Ldata_done
     nop
-.Ldata_copy:
-    lw      $t3, 0($t0)
-    sw      $t3, 0($t1)
-    addiu   $t0, $t0, 4
-    addiu   $t1, $t1, 4
-    bne     $t1, $t2, .Ldata_copy
+
+.Lpi_idle_data:
+    lw      $t6, 0x10($t4)
+    srl     $t6, $t6, 24
+    andi    $t6, $t6, 0x03
+    bnez    $t6, .Lpi_idle_data
     nop
+
+    li      $t6, 0x02000000
+    sw      $t6, 0x10($t4)
+
+    /* PI_DRAM_ADDR = physical(__data_start) */
+    and     $t0, $t0, $t5
+    BSWAP32 $t6, $t0, $t7
+    sw      $t6, 0x00($t4)
+
+    /* PI_CART_ADDR = physical(__data_lma) */
+    la      $t0, __data_lma
+    and     $t0, $t0, $t5
+    BSWAP32 $t6, $t0, $t7
+    sw      $t6, 0x04($t4)
+
+    /* PI_RD_LEN = length - 1 */
+    addiu   $t2, $t2, -1
+    BSWAP32 $t6, $t2, $t7
+    sw      $t6, 0x08($t4)
+
+.Lpi_wait_data:
+    lw      $t6, 0x10($t4)
+    srl     $t6, $t6, 24
+    andi    $t6, $t6, 0x01
+    bnez    $t6, .Lpi_wait_data
+    nop
+
+    li      $t6, 0x02000000
+    sw      $t6, 0x10($t4)
 .Ldata_done:
 
     /* -----------------------------------------------------------------------
