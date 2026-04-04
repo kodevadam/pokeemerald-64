@@ -56,24 +56,25 @@ __n64_boot:
     sw      $t1, 0x08($t0)          /* VI_WIDTH                               */
     li      $t1, 0x00000002
     sw      $t1, 0x0C($t0)          /* VI_INTR                                */
+    /* VI_CURRENT (0x10) is read-only — skip                                  */
     li      $t1, 0x03E52239
-    sw      $t1, 0x20($t0)          /* VI_BURST                               */
+    sw      $t1, 0x14($t0)          /* VI_BURST  (timing)                     */
     li      $t1, 0x0000020D
-    sw      $t1, 0x24($t0)          /* VI_V_SYNC                              */
+    sw      $t1, 0x18($t0)          /* VI_V_SYNC                              */
     li      $t1, 0x00000C15
-    sw      $t1, 0x28($t0)          /* VI_H_SYNC                              */
+    sw      $t1, 0x1C($t0)          /* VI_H_SYNC                              */
     li      $t1, 0x0C150C15
-    sw      $t1, 0x2C($t0)          /* VI_LEAP                                */
+    sw      $t1, 0x20($t0)          /* VI_LEAP   (VI_H_SYNC_LEAP)             */
     li      $t1, 0x006C02EC
-    sw      $t1, 0x30($t0)          /* VI_H_START                             */
+    sw      $t1, 0x24($t0)          /* VI_H_START                             */
     li      $t1, 0x002501FF
-    sw      $t1, 0x34($t0)          /* VI_V_START                             */
+    sw      $t1, 0x28($t0)          /* VI_V_START                             */
     li      $t1, 0x000E0204
-    sw      $t1, 0x38($t0)          /* VI_V_BURST                             */
+    sw      $t1, 0x2C($t0)          /* VI_V_BURST                             */
     li      $t1, 0x00000200
-    sw      $t1, 0x3C($t0)          /* VI_X_SCALE                             */
+    sw      $t1, 0x30($t0)          /* VI_X_SCALE                             */
     li      $t1, 0x00000400
-    sw      $t1, 0x40($t0)          /* VI_Y_SCALE                             */
+    sw      $t1, 0x34($t0)          /* VI_Y_SCALE                             */
     /* Fill framebuffer with RED (RGBA5551: R=31, G=0, B=0, A=1 = 0xF801)   */
     li      $t2, 0x80340000         /* framebuffer KSEG0 address              */
     li      $t3, 0x80340000 + 320 * 240 * 2   /* end address                */
