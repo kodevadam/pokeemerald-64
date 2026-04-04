@@ -45,10 +45,16 @@ static inline u16 RGB555toRGBA5551(u16 gba)
     u16 r = (gba >>  0) & 0x1F;
     u16 g = (gba >>  5) & 0x1F;
     u16 b = (gba >> 10) & 0x1F;
-    u16 px = (u16)((r << 11) | (g << 6) | (b << 1) | 1);
-    /* N64 VI reads framebuffer in big-endian; CPU is little-endian (-EL).
-     * Byte-swap so the VI sees the correct channel layout.               */
-    return __builtin_bswap16(px);
+    /* CPU and VI framebuffer DMA are both big-endian (-EB); no byte-swap. */
+    return (u16)((r << 11) | (g << 6) | (b << 1) | 1);
+}
+
+/* GBA palette data in SW_PALETTE is DMA-copied from ROM as raw LE bytes.
+ * In big-endian mode a u16 read of LE data returns bswap16(value), so we
+ * must byte-swap palette entries on every read. */
+static inline u16 PlttRead(const u16 *p, int i)
+{
+    return __builtin_bswap16(p[i]);
 }
 
 /* -----------------------------------------------------------------------
@@ -168,7 +174,7 @@ static int TextTilePixel(const BgDesc *bg, int px, int py, int *palNum)
     /* Screenblock entry offset: 32×32 tiles, 2 bytes each */
     int sbOffset = bg->screenBase + sbIndex * BG_SCREEN_SIZE;
     int entryOffset = sbOffset + (tileY * 32 + tileX) * 2;
-    u16 entry = *(u16 *)(vram + entryOffset);
+    u16 entry = __builtin_bswap16(*(u16 *)(vram + entryOffset));
 
     int tileNum = entry & 0x3FF;
     int hFlip   = (entry >> 10) & 1;
@@ -374,8 +380,8 @@ void N64_CompositeFrame(void)
     u16 tgt2Mask = (bldcnt >> 8) & 0x3F;
     u16 *pltt    = PlttBuf();
 
-    /* Backdrop colour (BG palette entry 0) */
-    u16 backdropRGB555 = pltt[0];
+    /* Backdrop colour (BG palette entry 0) — palette bytes are LE from ROM */
+    u16 backdropRGB555 = PlttRead(pltt, 0);
 
     for (int y = 0; y < DISPLAY_HEIGHT; y++) {
         /* Apply per-scanline register changes (battle wave effects, etc.) */
@@ -415,20 +421,20 @@ void N64_CompositeFrame(void)
                     if (palIdx != 0) {
                         transparent = 0;
                         if (bgs[bgIdx].bpp8)
-                            colour = pltt[palIdx];
+                            colour = PlttRead(pltt, palIdx);
                         else
-                            colour = pltt[palNum * 16 + palIdx];
+                            colour = PlttRead(pltt, palNum * 16 + palIdx);
                     }
                 } else if ((bgMode == 1 && bgIdx == 2) || bgMode == 2) {
                     /* Affine mode */
                     int palIdx = AffineTilePixel(&bgs[bgIdx], x, y, y);
                     if (palIdx != 0) {
                         transparent = 0;
-                        colour = pltt[palIdx];
+                        colour = PlttRead(pltt, palIdx);
                     }
                 } else if (bgMode == 3 && bgIdx == 2) {
-                    /* Bitmap mode 3: 240×160 direct-colour in VRAM */
-                    colour = *(u16 *)(VramBuf() + (y * 240 + x) * 2);
+                    /* Bitmap mode 3: 240×160 direct-colour in VRAM (LE bytes from ROM) */
+                    colour = __builtin_bswap16(*(u16 *)(VramBuf() + (y * 240 + x) * 2));
                     transparent = 0;
                 } else if (bgMode == 4 && bgIdx == 2) {
                     /* Bitmap mode 4: 240×160 8bpp paletted */
@@ -436,7 +442,7 @@ void N64_CompositeFrame(void)
                     u8  palIdx8 = VramBuf()[frame * 0xA000 + y * 240 + x];
                     if (palIdx8 != 0) {
                         transparent = 0;
-                        colour = pltt[palIdx8];
+                        colour = PlttRead(pltt, palIdx8);
                     }
                 }
 

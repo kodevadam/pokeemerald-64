@@ -122,34 +122,27 @@
 #define MI_INTR_DP      0x20    /* RDP interrupt                           */
 
 /* -----------------------------------------------------------------------
- * MMIO byte-swap macros
+ * MMIO access macros
  *
- * The N64 CPU is compiled in little-endian mode (-EL) so that GBA
- * game data (which is natively little-endian) is read correctly.
- * However, ALL N64 hardware registers (VI, AI, PI, SI, MI, SP, DP)
- * are wired big-endian regardless of CPU mode.
- *
- * Every hardware register read/write in our HAL MUST go through these
- * macros so the correct byte order is used.
+ * The N64 CPU is compiled in big-endian mode (-EB), matching the
+ * hardware endianness of all N64 MMIO registers (VI, AI, PI, SI, MI,
+ * SP, DP).  No byte-swapping is needed: a `lw` from a hardware register
+ * returns the value directly, and `sw` writes it directly.
  * --------------------------------------------------------------------- */
 #ifndef __ASSEMBLER__
 
 #include <stdint.h>
 
-/* Read a 32-bit big-endian hardware register into a native (little-endian) u32 */
+/* Read a 32-bit hardware register */
 static inline uint32_t n64_mmio_rd32(uint32_t addr)
 {
-    volatile uint32_t *p = (volatile uint32_t *)addr;
-    uint32_t v = *p;
-    /* The hardware register value is big-endian; swap to get native value */
-    return __builtin_bswap32(v);
+    return *(volatile uint32_t *)addr;
 }
 
-/* Write a native (little-endian) u32 to a big-endian hardware register */
+/* Write a 32-bit value to a hardware register */
 static inline void n64_mmio_wr32(uint32_t addr, uint32_t val)
 {
-    volatile uint32_t *p = (volatile uint32_t *)addr;
-    *p = __builtin_bswap32(val);
+    *(volatile uint32_t *)addr = val;
 }
 
 #define N64_HW_RD(base, off)        n64_mmio_rd32((uint32_t)((base) + (off)))

@@ -46,7 +46,7 @@ CHARMAP := charmap.txt
 # -G0          : no small-data section (gp-relative addressing off — we have no gp)
 # -mno-abicalls: no PIC, direct calls (bare-metal)
 # -fno-pic     : no position-independent code
-ARCH_FLAGS := -mips3 -mabi=32 -EL -G0 -mno-abicalls -fno-pic
+ARCH_FLAGS := -mips3 -mabi=32 -EB -G0 -mno-abicalls -fno-pic
 
 CFLAGS := $(ARCH_FLAGS)                \
            -O2                         \
@@ -79,10 +79,11 @@ CFLAGS := $(ARCH_FLAGS)                \
 CPP_DATA_FLAGS := -E -DN64_PORT=1 -DMODERN=1 -Iinclude -Iinclude/n64 \
                   -include data/n64_specials_constants.inc
 
-ASFLAGS := $(ARCH_FLAGS) -EL -iquote include -iquote include/n64
+ASFLAGS := $(ARCH_FLAGS) -EB -iquote include -iquote include/n64
 
 LDFLAGS := -T n64.ld                   \
             -Map $(BUILD_DIR)/$(MAP_NAME) \
+            -m elf32btsmip             \
             --gc-sections              \
             -nostdlib                  \
             -static
@@ -205,7 +206,7 @@ $(BUILD_DIR)/%.o: %.s
 # Assemble data/*.s — GBA game data (scripts, text, battle animations, sound)
 # Pipeline: preproc (charmap) → host CPP (expand #includes, -e converts enums→.equiv) → preproc -ie → as
 # Note: $(AS) is the bare assembler; use only assembler-compatible flags (not GCC-only flags).
-AS_ARCH_FLAGS := -mips3 -mabi=32 -EL -G0
+AS_ARCH_FLAGS := -mips3 -mabi=32 -EB -G0
 $(BUILD_DIR)/data/%.o: data/%.s
 	@mkdir -p $(dir $@)
 	$(PREPROC) $< charmap.txt | gcc $(CPP_DATA_FLAGS) - | $(PREPROC) -ie $< charmap.txt | $(AS) $(AS_ARCH_FLAGS) -o $@

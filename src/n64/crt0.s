@@ -68,70 +68,50 @@ __n64_boot:
      *   +0x08  PI_RD_LEN     — (length-1); writing triggers Cart→DRAM DMA
      *   +0x10  PI_STATUS     — bit0=DMA_BUSY, bit1=IO_BUSY; write 2=clr_intr
      *
-     * The N64 PI registers are big-endian.  Our CPU is little-endian (-EL).
-     * Every register store must write __builtin_bswap32(value); reads must
-     * shift right 24 to extract the actual LSB from the LE-read word.
-     * The BSWAP32 macro does the runtime swap in 9 instructions.
+     * CPU is compiled big-endian (-EB), matching N64 hardware register
+     * endianness.  No byte-swapping needed: SW writes the value directly.
      * --------------------------------------------------------------------- */
-
-    /* Macro: byte-swap \src → \dst, uses \tmp as scratch (9 insns) */
-    .macro  BSWAP32 dst, src, tmp
-    sll     \dst, \src, 24
-    srl     \tmp, \src, 24
-    or      \dst, \dst, \tmp
-    srl     \tmp, \src, 8
-    andi    \tmp, \tmp, 0xFF00
-    or      \dst, \dst, \tmp
-    andi    \tmp, \src, 0xFF00
-    sll     \tmp, \tmp, 8
-    or      \dst, \dst, \tmp
-    .endm
 
     li      $t4, 0xA4600000    /* PI_BASE (KSEG1 uncached)                  */
     li      $t5, 0x1FFFFFFF    /* physical-address mask                     */
 
     /* Wait for PI idle (in case IPL3 DMA is still finishing) */
 .Lpi_idle_text:
-    lw      $t6, 0x10($t4)     /* read PI_STATUS in LE; actual = bswap(t6)  */
-    srl     $t6, $t6, 24       /* actual bits[7:0] are in our bits[31:24]   */
+    lw      $t6, 0x10($t4)     /* read PI_STATUS; BE CPU gets BE value       */
     andi    $t6, $t6, 0x03     /* DMA_BUSY(b0) | IO_BUSY(b1)                */
     bnez    $t6, .Lpi_idle_text
     nop
 
     /* Clear any pending PI interrupt */
-    li      $t6, 0x02000000    /* bswap(2): write so hardware sees 0x2      */
+    li      $t6, 0x02           /* PI_STATUS: CLR_INTR                       */
     sw      $t6, 0x10($t4)
 
     /* PI_DRAM_ADDR = physical(__text_start) */
     la      $t0, __text_start
     and     $t0, $t0, $t5      /* strip KSEG bits → physical                */
-    BSWAP32 $t6, $t0, $t7
-    sw      $t6, 0x00($t4)
+    sw      $t0, 0x00($t4)
 
     /* PI_CART_ADDR = physical(__text_lma) */
     la      $t0, __text_lma
     and     $t0, $t0, $t5
-    BSWAP32 $t6, $t0, $t7
-    sw      $t6, 0x04($t4)
+    sw      $t0, 0x04($t4)
 
     /* PI_RD_LEN = (__text_end - __text_start) - 1  → triggers Cart→DRAM   */
     la      $t0, __text_end
     la      $t1, __text_start
     subu    $t0, $t0, $t1      /* length                                    */
     addiu   $t0, $t0, -1       /* length - 1                                */
-    BSWAP32 $t6, $t0, $t7
-    sw      $t6, 0x08($t4)     /* write PI_RD_LEN — DMA starts now          */
+    sw      $t0, 0x08($t4)     /* write PI_RD_LEN — DMA starts now          */
 
     /* Wait for DMA to complete */
 .Lpi_wait_text:
     lw      $t6, 0x10($t4)
-    srl     $t6, $t6, 24
     andi    $t6, $t6, 0x01     /* DMA_BUSY                                  */
     bnez    $t6, .Lpi_wait_text
     nop
 
     /* Clear PI interrupt */
-    li      $t6, 0x02000000
+    li      $t6, 0x02
     sw      $t6, 0x10($t4)
 .Ltext_done:
 
@@ -169,38 +149,33 @@ __n64_boot:
 
 .Lpi_idle_data:
     lw      $t6, 0x10($t4)
-    srl     $t6, $t6, 24
     andi    $t6, $t6, 0x03
     bnez    $t6, .Lpi_idle_data
     nop
 
-    li      $t6, 0x02000000
+    li      $t6, 0x02
     sw      $t6, 0x10($t4)
 
     /* PI_DRAM_ADDR = physical(__data_start) */
     and     $t0, $t0, $t5
-    BSWAP32 $t6, $t0, $t7
-    sw      $t6, 0x00($t4)
+    sw      $t0, 0x00($t4)
 
     /* PI_CART_ADDR = physical(__data_lma) */
     la      $t0, __data_lma
     and     $t0, $t0, $t5
-    BSWAP32 $t6, $t0, $t7
-    sw      $t6, 0x04($t4)
+    sw      $t0, 0x04($t4)
 
     /* PI_RD_LEN = length - 1 */
     addiu   $t2, $t2, -1
-    BSWAP32 $t6, $t2, $t7
-    sw      $t6, 0x08($t4)
+    sw      $t2, 0x08($t4)
 
 .Lpi_wait_data:
     lw      $t6, 0x10($t4)
-    srl     $t6, $t6, 24
     andi    $t6, $t6, 0x01
     bnez    $t6, .Lpi_wait_data
     nop
 
-    li      $t6, 0x02000000
+    li      $t6, 0x02
     sw      $t6, 0x10($t4)
 .Ldata_done:
 
