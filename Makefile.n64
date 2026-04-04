@@ -183,7 +183,9 @@ $(BUILD_DIR)/$(ROM_NAME): $(BUILD_DIR)/$(ELF_NAME)
 	 if [ $$PAD -gt 0 ]; then \
 	   dd if=/dev/zero bs=1 count=$$PAD >> $@ 2>/dev/null; \
 	 fi
-	@# Fix ROM CRC checksums
+	@# Assemble and patch open-source IPL3 into ROM header bytes 0x040-0x0FFF
+	python3 tools/patch_ipl3.py $@
+	@# Fix ROM CRC checksums (computed over ROM[0x1000..], not the IPL3 region)
 	$(CHKSUM64) $@
 	@echo "ROM built: $@ ($$(wc -c < $@) bytes)"
 
