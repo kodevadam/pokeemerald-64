@@ -1,0 +1,4 @@
+miniboot.o
+miniboot.elf
+miniboot.z64
+hybrid.z64
