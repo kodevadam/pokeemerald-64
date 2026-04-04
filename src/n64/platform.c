@@ -97,9 +97,11 @@ static void N64_InitSP(void)
 {
     /* Set SP_STATUS: halt RSP, clear broke, clear interrupt */
     N64_HW_WR(N64_SP_BASE_REG, 0x10, 0x0E);   /* SET_HALT(b1)|CLR_BROKE(b2)|CLR_INTR(b3) */
-    /* Wait for RSP to halt */
-    while (!(N64_HW_RD(N64_SP_BASE_REG, 0x10) & 1))
-        ;
+    /* Wait for RSP to halt with timeout — avoids infinite spin if RSP is stuck */
+    for (int i = 0; i < 2000000; i++) {
+        if (N64_HW_RD(N64_SP_BASE_REG, 0x10) & 1)
+            break;
+    }
 }
 
 /* -----------------------------------------------------------------------
@@ -146,8 +148,37 @@ extern void N64_InitFlashRAM(void); /* flashram.c */
 /* -----------------------------------------------------------------------
  * N64Main — platform entry point (called from crt0.s)
  * --------------------------------------------------------------------- */
+/* Minimal VI init + screen fill used for staged boot diagnostics */
+static void DiagFillScreen(u16 colour)
+{
+    /* Write VI registers directly (same values as N64_InitVI) */
+    u32 physFB = (u32)((uintptr_t)__fb0_start & 0x00FFFFFF);
+    N64_HW_WR(N64_VI_BASE_REG, VI_STATUS_REG,  0x00003202);
+    N64_HW_WR(N64_VI_BASE_REG, VI_ORIGIN_REG,  physFB);
+    N64_HW_WR(N64_VI_BASE_REG, VI_WIDTH_REG,   320);
+    N64_HW_WR(N64_VI_BASE_REG, VI_INTR_REG,    0x00000002);
+    N64_HW_WR(N64_VI_BASE_REG, VI_BURST_REG,   0x03E52239);
+    N64_HW_WR(N64_VI_BASE_REG, VI_V_SYNC_REG,  0x0000020D);
+    N64_HW_WR(N64_VI_BASE_REG, VI_H_SYNC_REG,  0x00000C15);
+    N64_HW_WR(N64_VI_BASE_REG, VI_LEAP_REG,    0x0C150C15);
+    N64_HW_WR(N64_VI_BASE_REG, VI_H_START_REG, 0x006C02EC);
+    N64_HW_WR(N64_VI_BASE_REG, VI_V_START_REG, 0x002501FF);
+    N64_HW_WR(N64_VI_BASE_REG, VI_V_BURST_REG, 0x000E0204);
+    N64_HW_WR(N64_VI_BASE_REG, VI_X_SCALE_REG, 0x00000200);
+    N64_HW_WR(N64_VI_BASE_REG, VI_Y_SCALE_REG, 0x00000400);
+    /* Fill framebuffer */
+    u16 *fb = (u16*)__fb0_start;
+    for (int i = 0; i < 320 * 240; i++) fb[i] = colour;
+}
+
 void N64Main(void)
 {
+    /* ------------------------------------------------------------------
+     * STAGE 0 DIAGNOSTIC: if you see BLUE → N64Main() was called.
+     * If screen stays black → crt0.s crashed before reaching N64Main.
+     * ------------------------------------------------------------------ */
+    DiagFillScreen(0x003F);  /* RGBA5551 bright blue */
+
     /* ------------------------------------------------------------------
      * Point software hardware buffers at linker-allocated RDRAM regions
      * ------------------------------------------------------------------ */
@@ -184,19 +215,12 @@ void N64Main(void)
     N64_InitSP();   N64_DebugPrint("[N64] InitSP done");
     N64_InitVI();   N64_DebugPrint("[N64] InitVI done");
 
-    /* ---------------------------------------------------------------
-     * BOOT DIAGNOSTIC: fill both framebuffers with solid bright red.
-     * If the screen shows red, VI is alive and boot reached this point.
-     * The game will overwrite this with real content within ~1 second.
-     * RGBA5551: R=31,G=0,B=0,A=1 = 0xF801
-     * --------------------------------------------------------------- */
+    /* STAGE 1 DIAGNOSTIC: GREEN = N64_InitVI() completed + all MI/PI/SP init passed */
     {
         u16 *fb0 = (u16 *)__fb0_start;
         u16 *fb1 = (u16 *)__fb1_start;
-        for (int i = 0; i < 320 * 240; i++) {
-            fb0[i] = 0xF801;
-            fb1[i] = 0xF801;
-        }
+        for (int i = 0; i < 320 * 240; i++) { fb0[i] = 0x07C1; fb1[i] = 0x07C1; }
+        /* RGBA5551 bright green = 0x07C1: R=0, G=31, B=0, A=1 */
     }
     N64_InitAI();   N64_DebugPrint("[N64] InitAI done");
     N64_InitInput();N64_DebugPrint("[N64] InitInput done");
