@@ -37,8 +37,8 @@
     .byte   0x12        /* PI_BSD_DOM1_PGS_REG */
     .byte   0x40        /* PI_BSD_DOM1_RLS_REG */
 
-    /* Clock rate (0 = default 93.75 MHz) — stored big-endian for IPL3 */
-    .byte   0x00, 0x0F, 0x00, 0x00
+    /* Clock rate (0 = default) — must be 0x00000000 for libdragon IPL3 */
+    .byte   0x00, 0x00, 0x00, 0x00
 
     /* Entry point in RDRAM (KSEG0 0x80000400) — big-endian for IPL3 */
     .byte   0x80, 0x00, 0x04, 0x00

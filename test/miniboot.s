@@ -29,8 +29,8 @@
     .section .n64hdr, "a"
     /* PI BSD Domain 1 timing — standard cart values */
     .byte 0x80, 0x37, 0x12, 0x40
-    /* Clock rate override (0 = 93.75 MHz) */
-    .byte 0x00, 0x0F, 0x00, 0x00
+    /* Clock rate override (0 = default) — must be 0 to match libdragon */
+    .byte 0x00, 0x00, 0x00, 0x00
     /* Entry point: 0x80000400 */
     .byte 0x80, 0x00, 0x04, 0x00
     /* Release / OS version */
@@ -50,8 +50,8 @@
     .ascii "NMBP"
     /* Destination: E = North America */
     .byte 0x45
-    /* Cart ID, reserved, ROM version */
-    .byte 0x00, 0x00, 0x00
+    /* Cart ID, reserved, ROM version — 0x22 matches libdragon convention */
+    .byte 0x00, 0x00, 0x22
 
 /* -----------------------------------------------------------------------
  * Section 2: IPL3 slot — 0xFC0 bytes at ROM offset 0x0040
