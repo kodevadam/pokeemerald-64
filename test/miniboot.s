@@ -16,6 +16,8 @@
  * Framebuffer: physical 0x00100000 (KSEG0 0x80100000, KSEG1 0xA0100000)
  *   - safely above the 1 MB IPL3 copy (0x80000000–0x80100000)
  *   - 320×240×2 = 153 600 bytes → ends at 0x00125800 (well within 4 MB)
+ *   - VI_STATUS uses serrate=1 (480i interlaced) to match libdragon's init,
+ *     which is what most displays expect from N64 hardware output.
  */
 
     .set noreorder
@@ -81,7 +83,7 @@ _start:
      * ------------------------------------------------------------------ */
     lui     $t0, 0xA440             /* $t0 = 0xA4400000  (VI base, KSEG1)    */
 
-    li      $t1, 0x00003202         /* VI_STATUS: 16bpp RGBA5551, progressive */
+    li      $t1, 0x0000324E         /* VI_STATUS: 16bpp, gamma, serrate(480i) — libdragon values */
     sw      $t1, 0x00($t0)
 
     li      $t1, 0x00100000         /* VI_ORIGIN: physical FB = 0x00100000    */
