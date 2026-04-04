@@ -75,9 +75,12 @@ __n64_boot:
     sw      $t1, 0x30($t0)          /* VI_X_SCALE                             */
     li      $t1, 0x00000400
     sw      $t1, 0x34($t0)          /* VI_Y_SCALE                             */
-    /* Fill framebuffer with RED (RGBA5551: R=31, G=0, B=0, A=1 = 0xF801)   */
-    li      $t2, 0x80340000         /* framebuffer KSEG0 address              */
-    li      $t3, 0x80340000 + 320 * 240 * 2   /* end address                */
+    /* Fill framebuffer with RED (RGBA5551: R=31, G=0, B=0, A=1 = 0xF801)
+     * Use KSEG1 (uncached, 0xA0000000+) so writes go directly to RDRAM —
+     * VI reads RDRAM directly and won't see cached-but-not-written-back data */
+    lui     $t2, 0xA034             /* $t2 = 0xA0340000 (KSEG1 uncached)     */
+    lui     $t3, 0xA034
+    ori     $t3, $t3, 0x5800        /* $t3 = 0xA0345800 (end: +320*240*2)    */
     li      $t1, 0xF801F801         /* two red pixels packed into one word    */
 .Ldiag_red_fill:
     sw      $t1, 0($t2)

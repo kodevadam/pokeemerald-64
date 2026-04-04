@@ -155,8 +155,10 @@ static void DiagFillScreen(u16 colour)
      * After BSS (~0x803323F0), before stack (stack top = 0x803A0000).
      * 0x80340000 + 320*240*2 = 0x80365800 — well within 4MB base RDRAM.
      * Restore to __fb0_start once DMA + full memory layout is confirmed. */
-    u16 *fb = (u16*)0x80340000;
-    u32 physFB = 0x00340000;    /* physical = KSEG0_addr & 0x1FFFFFFF */
+    /* Use KSEG1 (uncached 0xA0000000+) so writes reach RDRAM immediately.
+     * VI reads RDRAM directly; cached (KSEG0) writes may not be flushed yet. */
+    u16 *fb = (u16*)0xA0340000;
+    u32 physFB = 0x00340000;    /* physical = KSEG1_addr & 0x1FFFFFFF */
     N64_HW_WR(N64_VI_BASE_REG, VI_STATUS_REG,  0x00003202);
     N64_HW_WR(N64_VI_BASE_REG, VI_ORIGIN_REG,  physFB);
     N64_HW_WR(N64_VI_BASE_REG, VI_WIDTH_REG,   320);
