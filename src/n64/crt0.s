@@ -48,8 +48,9 @@ __n64_boot:
     ori     $t0, $t0, 0x0400   /* CP0 usable                              */
     mtc0    $t0, $12
 
-    /* Set up stack — __stack_top is exported by the linker script */
-    la      $sp, __stack_top
+    /* Set up stack — DIAG: use base RDRAM (0x803A0000) to work on 4MB N64s
+     * without expansion pak.  Restore to __stack_top once DMA is confirmed. */
+    li      $sp, 0x803A0000
     addiu   $sp, $sp, -8       /* ABI: maintain 8-byte alignment          */
 
     /* Set global pointer */
@@ -74,6 +75,12 @@ __n64_boot:
 
     li      $t4, 0xA4600000    /* PI_BASE (KSEG1 uncached)                  */
     li      $t5, 0x1FFFFFFF    /* physical-address mask                     */
+
+    /* DIAG: bypass PI DMA — N64Main is within IPL3's 1MB copy, already in
+     * RDRAM.  Jump to .Ltext_done to skip the DMA wait loops entirely.
+     * Remove this bypass once the blue-screen diagnostic confirms boot works. */
+    b       .Ltext_done
+    nop
 
     /* Wait for PI idle (in case IPL3 DMA is still finishing) */
 .Lpi_idle_text:
@@ -145,6 +152,10 @@ __n64_boot:
     la      $t1, __data_end
     subu    $t2, $t1, $t0      /* length */
     beqz    $t2, .Ldata_done
+    nop
+
+    /* DIAG: bypass data DMA along with text DMA bypass above. */
+    b       .Ldata_done
     nop
 
 .Lpi_idle_data:

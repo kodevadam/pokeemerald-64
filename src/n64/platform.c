@@ -151,8 +151,12 @@ extern void N64_InitFlashRAM(void); /* flashram.c */
 /* Minimal VI init + screen fill used for staged boot diagnostics */
 static void DiagFillScreen(u16 colour)
 {
-    /* Write VI registers directly (same values as N64_InitVI) */
-    u32 physFB = (u32)((uintptr_t)__fb0_start & 0x00FFFFFF);
+    /* DIAG: use base-RDRAM framebuffer at 0x80340000 (physical 0x340000).
+     * After BSS (~0x803323F0), before stack (stack top = 0x803A0000).
+     * 0x80340000 + 320*240*2 = 0x80365800 — well within 4MB base RDRAM.
+     * Restore to __fb0_start once DMA + full memory layout is confirmed. */
+    u16 *fb = (u16*)0x80340000;
+    u32 physFB = 0x00340000;    /* physical = KSEG0_addr & 0x1FFFFFFF */
     N64_HW_WR(N64_VI_BASE_REG, VI_STATUS_REG,  0x00003202);
     N64_HW_WR(N64_VI_BASE_REG, VI_ORIGIN_REG,  physFB);
     N64_HW_WR(N64_VI_BASE_REG, VI_WIDTH_REG,   320);
@@ -166,8 +170,6 @@ static void DiagFillScreen(u16 colour)
     N64_HW_WR(N64_VI_BASE_REG, VI_V_BURST_REG, 0x000E0204);
     N64_HW_WR(N64_VI_BASE_REG, VI_X_SCALE_REG, 0x00000200);
     N64_HW_WR(N64_VI_BASE_REG, VI_Y_SCALE_REG, 0x00000400);
-    /* Fill framebuffer */
-    u16 *fb = (u16*)__fb0_start;
     for (int i = 0; i < 320 * 240; i++) fb[i] = colour;
 }
 
