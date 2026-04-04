@@ -114,9 +114,15 @@ _start:
     li      $t1, 0x000E0204
     sw      $t1, 0x2C($t0)          /* VI_V_BURST                             */
 
-    /* 2b. Framebuffer address, width, scale */
-    li      $t1, 0x00200000
-    sw      $t1, 0x04($t0)          /* VI_ORIGIN  = physical 0x200000 (2 MB)  */
+    /* 2b. Framebuffer address, width, scale
+     * DIAGNOSTIC: Point VI_ORIGIN at 0x000400 (our own boot code in RDRAM).
+     * The code bytes (3C08A440 AD000000...) will render as colored pixels.
+     * If screen shows ANY non-black content → VI reads correctly,
+     *   fill loop is the problem (not writing to 0x200000).
+     * If screen stays black → VI_ORIGIN ignored or timing wrong.
+     */
+    li      $t1, 0x00000400         /* VI_ORIGIN = 0x000400 (boot code bytes) */
+    sw      $t1, 0x04($t0)          /* VI_ORIGIN                              */
 
     li      $t1, 640
     sw      $t1, 0x08($t0)          /* VI_WIDTH   = 640                       */
