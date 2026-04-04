@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """
-tools/patch_ipl3.py — Assemble ipl3.s and patch it into a .v64 ROM file.
+tools/patch_ipl3.py — Assemble ipl3.s and patch it into an N64 ROM file.
 
-Usage: python3 tools/patch_ipl3.py build/n64/pokeemerald64.v64
+Usage:
+  python3 tools/patch_ipl3.py <rom.z64>
+      Assembles tools/ipl3.s and patches it into the ROM.
+
+  python3 tools/patch_ipl3.py --bin <ipl3.bin> <rom.z64>
+      Uses a pre-built IPL3 binary (e.g. extracted from elite_newkind.z64
+      via tools/extract_ipl3.py) instead of assembling ipl3.s.
+      This is the recommended path — libdragon's IPL3 is recognized by SC64.
 
 Steps:
-  1. Assemble tools/ipl3.s → raw binary using mipsel-linux-gnu-as / objcopy
+  1. Get IPL3 bytes: either assemble ipl3.s or read --bin file
   2. Verify the binary fits in 4032 bytes (0x040–0x0FFF)
   3. Patch the binary into the ROM at offset 0x040
 """
@@ -70,23 +77,45 @@ def patch_rom(rom_path, ipl3_bytes):
     print(f"  Code size: {len(ipl3_bytes)} bytes  Padded to: {IPL3_SIZE} bytes")
 
 def main():
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <rom.v64>")
+    args = sys.argv[1:]
+
+    # Parse --bin <file> flag
+    bin_path = None
+    if "--bin" in args:
+        idx = args.index("--bin")
+        if idx + 1 >= len(args):
+            print("Error: --bin requires a file argument")
+            sys.exit(1)
+        bin_path = args[idx + 1]
+        args = args[:idx] + args[idx + 2:]
+
+    if not args:
+        print(f"Usage: {sys.argv[0]} [--bin <ipl3.bin>] <rom.z64>")
         sys.exit(1)
 
-    rom_path = sys.argv[1]
+    rom_path = args[0]
     if not os.path.exists(rom_path):
         print(f"ROM not found: {rom_path}")
         sys.exit(1)
 
-    print("Assembling IPL3...")
-    ipl3_bytes = assemble_ipl3()
-    print(f"IPL3 assembled: {len(ipl3_bytes)} bytes")
+    if bin_path:
+        if not os.path.exists(bin_path):
+            print(f"IPL3 binary not found: {bin_path}")
+            sys.exit(1)
+        with open(bin_path, "rb") as f:
+            ipl3_bytes = f.read()
+        print(f"Using pre-built IPL3: {bin_path} ({len(ipl3_bytes)} bytes)")
+    else:
+        print("Assembling IPL3...")
+        ipl3_bytes = assemble_ipl3()
+        print(f"IPL3 assembled: {len(ipl3_bytes)} bytes")
 
     # Verify first instruction looks sane (should be a LUI or similar)
     if len(ipl3_bytes) >= 4:
         first_word = int.from_bytes(ipl3_bytes[:4], 'big')
         print(f"  First instruction: 0x{first_word:08X}")
+        if first_word == 0x3044d236:
+            print("  (libdragon IPL3 — recognized by SC64)")
 
     patch_rom(rom_path, ipl3_bytes)
 

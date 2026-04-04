@@ -31,8 +31,13 @@ miniboot.z64: miniboot.elf
 	@SIZE=$$(wc -c < $@); \
 	 PAD=$$((1052672 - $$SIZE)); \
 	 if [ $$PAD -gt 0 ]; then dd if=/dev/zero bs=1 count=$$PAD >> $@ 2>/dev/null; fi
-	@# Patch IPL3 into bytes 0x040–0x0FFF
-	python3 $(TOOLS)/patch_ipl3.py $@
+	@# Patch IPL3 into bytes 0x040–0x0FFF.
+	@# Use pre-built libdragon IPL3 binary if present (recognized by SC64).
+	@if [ -f $(TOOLS)/ipl3_libdragon.bin ]; then \
+	    python3 $(TOOLS)/patch_ipl3.py --bin $(TOOLS)/ipl3_libdragon.bin $@; \
+	else \
+	    python3 $(TOOLS)/patch_ipl3.py $@; \
+	fi
 	@# Fix CRC
 	$(CRC) $@
 	@echo "==> Miniboot ROM: $@ ($$(wc -c < $@) bytes)"
