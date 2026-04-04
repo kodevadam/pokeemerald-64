@@ -1,7 +1,7 @@
 # ============================================================
 #  Makefile.n64  —  pokeemerald N64 port build system
-#  Target: Nintendo 64 (.v64 byte-swapped ROM, little-endian MIPS)
-#  Toolchain: mipsel-linux-gnu-gcc (little-endian MIPS, bare-metal)
+#  Target: Nintendo 64 (.z64 big-endian ROM, big-endian MIPS -EB)
+#  Toolchain: mipsel-linux-gnu-gcc (big-endian mode -EB, bare-metal)
 #
 #  Why little-endian MIPS?
 #    The GBA is little-endian.  All game data (palettes, tilemaps,
@@ -15,7 +15,7 @@
 # ---------- Basic configuration ----------------------------
 FILE_NAME  := pokeemerald64
 BUILD_DIR  := build/n64
-ROM_NAME   := $(FILE_NAME).v64
+ROM_NAME   := $(FILE_NAME).z64
 ELF_NAME   := $(FILE_NAME).elf
 MAP_NAME   := $(FILE_NAME).map
 
