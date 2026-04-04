@@ -41,6 +41,50 @@
     .globl  __n64_boot
     .type   __n64_boot, @function
 __n64_boot:
+    /* -----------------------------------------------------------------------
+     * DIAG-RED: Pure-assembly VI init at the very first instruction of
+     * __n64_boot.  If RED appears, the CPU reached our code.
+     * Framebuffer at 0x80340000 (physical 0x340000, base RDRAM).
+     * VI registers at 0xA4400000 (KSEG1 uncached).
+     * --------------------------------------------------------------------- */
+    li      $t0, 0xA4400000         /* VI base (KSEG1 uncached)              */
+    li      $t1, 0x00003202         /* VI_STATUS: 16bpp RGBA5551             */
+    sw      $t1, 0x00($t0)          /* VI_STATUS                              */
+    li      $t1, 0x00340000         /* VI_ORIGIN: physical 0x340000           */
+    sw      $t1, 0x04($t0)          /* VI_ORIGIN                              */
+    li      $t1, 320
+    sw      $t1, 0x08($t0)          /* VI_WIDTH                               */
+    li      $t1, 0x00000002
+    sw      $t1, 0x0C($t0)          /* VI_INTR                                */
+    li      $t1, 0x03E52239
+    sw      $t1, 0x20($t0)          /* VI_BURST                               */
+    li      $t1, 0x0000020D
+    sw      $t1, 0x24($t0)          /* VI_V_SYNC                              */
+    li      $t1, 0x00000C15
+    sw      $t1, 0x28($t0)          /* VI_H_SYNC                              */
+    li      $t1, 0x0C150C15
+    sw      $t1, 0x2C($t0)          /* VI_LEAP                                */
+    li      $t1, 0x006C02EC
+    sw      $t1, 0x30($t0)          /* VI_H_START                             */
+    li      $t1, 0x002501FF
+    sw      $t1, 0x34($t0)          /* VI_V_START                             */
+    li      $t1, 0x000E0204
+    sw      $t1, 0x38($t0)          /* VI_V_BURST                             */
+    li      $t1, 0x00000200
+    sw      $t1, 0x3C($t0)          /* VI_X_SCALE                             */
+    li      $t1, 0x00000400
+    sw      $t1, 0x40($t0)          /* VI_Y_SCALE                             */
+    /* Fill framebuffer with RED (RGBA5551: R=31, G=0, B=0, A=1 = 0xF801)   */
+    li      $t2, 0x80340000         /* framebuffer KSEG0 address              */
+    li      $t3, 0x80340000 + 320 * 240 * 2   /* end address                */
+    li      $t1, 0xF801F801         /* two red pixels packed into one word    */
+.Ldiag_red_fill:
+    sw      $t1, 0($t2)
+    addiu   $t2, $t2, 4
+    bne     $t2, $t3, .Ldiag_red_fill
+    nop
+    /* END DIAG-RED -------------------------------------------------------- */
+
     /* Disable all interrupts and clear BEV (use normal exception vectors) */
     mfc0    $t0, $12            /* read CP0 Status                        */
     li      $t1, ~0x00010001   /* clear IE (bit 0) and EXL (not needed)  */
