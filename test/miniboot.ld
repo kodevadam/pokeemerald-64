@@ -4,8 +4,8 @@
  * Produces a flat binary with this layout:
  *   offset 0x0000  .n64hdr    (64 bytes  — N64 ROM header)
  *   offset 0x0040  .ipl3slot  (4032 bytes — zeroed, patched post-link)
- *   offset 0x1000  .vecpad    (1024 bytes — zeros for RDRAM 0x80000000)
- *   offset 0x1400  .boot      (boot code  — RDRAM 0x80000400)
+ *   offset 0x1000  .boothdr   (72 bytes — boot size word at 0x1040)
+ *   offset 0x1048  .boot      (boot code  — DMA'd to RDRAM[RDRAM_SIZE-0x1000])
  */
 
 OUTPUT_ARCH(mips)
@@ -20,8 +20,8 @@ SECTIONS
 {
     .n64hdr  0xB0000000 : { *(.n64hdr)  } > ROM
     .ipl3slot           : { *(.ipl3slot)} > ROM
-    .vecpad             : { *(.vecpad)  } > ROM
-    .boot    0xB0001400 : { *(.boot)    } > ROM
+    .boothdr 0xB0001000 : { *(.boothdr) } > ROM
+    .boot    0xB0001048 : { *(.boot)    } > ROM
 
     /DISCARD/ :
     {

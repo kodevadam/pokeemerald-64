@@ -61,15 +61,27 @@
     .space 0xFC0
 
 /* -----------------------------------------------------------------------
- * Section 3: Zero pad — 0x400 bytes at ROM offset 0x1000
- * IPL3 copies ROM[0x1000..] → RDRAM[0x80000000..].
- * This pad maps to RDRAM[0x80000000..0x800003FF] (exception vector area).
+ * Section 3: Boot header — 0x48 bytes at ROM offset 0x1000
+ *
+ * The libdragon IPL3 reads ROM[0x1040] as the boot code size (bytes),
+ * then DMA-copies ROM[0x1048..0x1047+size] to RDRAM[(RDRAM_SIZE-size)..
+ * (RDRAM_SIZE-1)], then jumps to KSEG0 = 0x80000000 + RDRAM_SIZE - size.
+ *
+ * ROM[0x1000..0x103F] = unused padding (zeros)
+ * ROM[0x1040..0x1043] = BOOT_SIZE = 0x1000 (4 KB)
+ * ROM[0x1044..0x1047] = zeros
  * ----------------------------------------------------------------------- */
-    .section .vecpad, "a"
-    .space 0x400
+    .section .boothdr, "a"
+    .space 0x40                     /* ROM[0x1000..0x103F] — unused           */
+    .word  0x00001000               /* ROM[0x1040..0x1043] — boot size = 4 KB */
+    .space 4                        /* ROM[0x1044..0x1047] — unused           */
 
 /* -----------------------------------------------------------------------
- * Section 4: Boot code — starts at ROM offset 0x1400 → RDRAM 0x80000400
+ * Section 4: Boot code — ROM offset 0x1048
+ *   DMA'd to RDRAM[(RDRAM_SIZE - 0x1000)..(RDRAM_SIZE-1)]
+ *   CPU entry point: KSEG0 0x80000000 + RDRAM_SIZE - 0x1000
+ *     4 MB RDRAM → entry at 0x803FF000 (physical 0x3FF000)
+ *     8 MB RDRAM → entry at 0x807FF000 (physical 0x7FF000)
  * ----------------------------------------------------------------------- */
     .section .boot, "ax"
     .globl _start
@@ -80,11 +92,11 @@ _start:
      * VI init following libdragon's exact order (vi_ntsc_i preset):
      *   1. Disable VI first (VI_CTRL=0)
      *   2. Write all timing registers
-     *   3. Fill framebuffer
+     *   3. Fill framebuffer with RED
      *   4. Enable VI last (VI_CTRL=0x3242)
      *
-     * Using 640×480 interlaced to exactly match elite_newkind behaviour.
-     * Framebuffer at physical 0x00200000 (2 MB, well clear of DMA region).
+     * 640×480 interlaced matches elite_newkind exactly.
+     * Framebuffer at physical 0x00200000 (2 MB, well below stack/code area).
      * VI_CTRL=0x3242: 16bpp, serrate, AA_MODE_RESAMPLE, pixel_advance=3.
      * ------------------------------------------------------------------ */
     lui     $t0, 0xA440             /* $t0 = 0xA4400000 (VI base, KSEG1)     */
@@ -92,7 +104,7 @@ _start:
     /* 1. Disable VI immediately */
     sw      $zero, 0x00($t0)        /* VI_CTRL = 0 (blank)                    */
 
-    /* 2a. Timing registers (vi_ntsc_i preset, indices 5-11) */
+    /* 2a. Timing registers (vi_ntsc_i preset) */
     li      $t1, 0x03E52239
     sw      $t1, 0x14($t0)          /* VI_BURST                               */
 
@@ -114,15 +126,9 @@ _start:
     li      $t1, 0x000E0204
     sw      $t1, 0x2C($t0)          /* VI_V_BURST                             */
 
-    /* 2b. Framebuffer address, width, scale
-     * DIAGNOSTIC: Point VI_ORIGIN at 0x000400 (our own boot code in RDRAM).
-     * The code bytes (3C08A440 AD000000...) will render as colored pixels.
-     * If screen shows ANY non-black content → VI reads correctly,
-     *   fill loop is the problem (not writing to 0x200000).
-     * If screen stays black → VI_ORIGIN ignored or timing wrong.
-     */
-    li      $t1, 0x00000400         /* VI_ORIGIN = 0x000400 (boot code bytes) */
-    sw      $t1, 0x04($t0)          /* VI_ORIGIN                              */
+    /* 2b. Framebuffer: physical 0x200000, 640 wide, standard scale */
+    li      $t1, 0x00200000
+    sw      $t1, 0x04($t0)          /* VI_ORIGIN = 0x200000 (framebuffer)     */
 
     li      $t1, 640
     sw      $t1, 0x08($t0)          /* VI_WIDTH   = 640                       */
@@ -131,15 +137,15 @@ _start:
     sw      $t1, 0x0C($t0)          /* VI_V_INTR  = 2                         */
 
     li      $t1, 0x00000400
-    sw      $t1, 0x30($t0)          /* VI_X_SCALE = 0x400 (1:1, 640 wide)    */
+    sw      $t1, 0x30($t0)          /* VI_X_SCALE = 0x400                     */
 
     li      $t1, 0x00000800
-    sw      $t1, 0x34($t0)          /* VI_Y_SCALE = 0x800 (2:1, 480 tall)    */
+    sw      $t1, 0x34($t0)          /* VI_Y_SCALE = 0x800                     */
 
-    /* 3. Fill 640×480 framebuffer (KSEG1 0xA0200000) with RED 0xF801 */
+    /* 3. Fill 640×480 framebuffer at KSEG1 0xA0200000 with RED (0xF801) */
     lui     $t2, 0xA020             /* $t2 = 0xA0200000                       */
     lui     $t3, 0xA029
-    ori     $t3, $t3, 0x6000        /* $t3 = 0xA0200000 + 640*480*2 = 0xA0296000 */
+    ori     $t3, $t3, 0x6000        /* $t3 = 0xA0296000 (0xA0200000+614400)   */
     li      $t1, 0xF801F801         /* two red RGBA5551 pixels                */
 .Lfill:
     sw      $t1, 0($t2)
@@ -149,7 +155,7 @@ _start:
 
     /* 4. Enable VI — must come AFTER framebuffer is filled */
     li      $t1, 0x00003242         /* VI_CTRL: 16bpp, serrate, resample,     */
-    sw      $t1, 0x00($t0)          /*          pixel_advance=3 (= elite)     */
+    sw      $t1, 0x00($t0)          /*          pixel_advance=3               */
 
     /* Halt — spin forever */
 .Lhalt:
