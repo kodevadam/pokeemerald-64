@@ -81,8 +81,20 @@
     /* Leave as zeros; inject IPL3 before building final ROM */
     .space  0x1000 - 0x40
 
-    /* Exception vector area — 0x400 bytes of zero padding.
-     * IPL3 copies ROM[0x1000..0x1400) → RDRAM[0x80000000..0x80000400).
-     * crt0.s __n64_boot runs from RDRAM 0x80000400 and installs
-     * the real exception vectors at RDRAM 0x80000000-0x800001FF. */
-    .space  0x400
+    /* Boot header at ROM[0x1000..0x1047] — read by libdragon IPL3.
+     *
+     * The libdragon IPL3 protocol:
+     *   ROM[0x1040] = boot_size  (bytes to DMA from ROM[0x1048..])
+     *   IPL3 DMA's ROM[0x1048..0x1048+boot_size-1] →
+     *               RDRAM[RDRAM_SIZE-boot_size .. RDRAM_SIZE-1]
+     *   IPL3 jumps to 0x80000000 + RDRAM_SIZE - boot_size
+     *
+     * We set boot_size = 0x4000 (16 KB).
+     * On 8 MB RDRAM (expansion pak): IPL3 puts .boot at 0x807FC000.
+     * n64.ld sets .boot VMA = 0x807FC000 to match.
+     * crt0.s then PI-DMA's .text/.data from ROM to their RDRAM VMAs.
+     */
+    .space  0x40                    /* ROM[0x1000..0x103F] — reserved         */
+    .word   0x00004000              /* ROM[0x1040..0x1043] — boot size = 16KB */
+    .space  4                       /* ROM[0x1044..0x1047] — reserved         */
+    /* .boot section (crt0.s) follows immediately at ROM[0x1048]              */

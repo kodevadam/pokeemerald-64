@@ -4,11 +4,14 @@
  * N64 boot stub — MIPS assembly entry point
  *
  * Execution flow:
- *   1. IPL3 (in the ROM header) copies the first ~1 MB of ROM into RDRAM
- *      and jumps to the entry point defined in the ROM header (0x80000400).
- *   2. This stub runs in RDRAM at 0x80000400 (cached KSEG0).
- *   3. We set up the stack pointer, clear BSS, initialise the software
- *      hardware buffers, then jump to N64Main() in platform.c.
+ *   1. libdragon IPL3 reads ROM[0x1040] = 0x4000 (16 KB boot size).
+ *      It DMA's ROM[0x1048..0x5048] → RDRAM[RDRAM_SIZE-0x4000..RDRAM_SIZE-1]
+ *      then jumps to 0x80000000 + RDRAM_SIZE - 0x4000.
+ *      On 8 MB RDRAM (expansion pak): runs from 0x807FC000.
+ *   2. This stub runs from the top of RDRAM (0x807FC000 with 8 MB RDRAM).
+ *      It PI-DMA's .text from ROM → RDRAM[0x80000400..] and .data from
+ *      ROM → its RDRAM VMA, then jumps to N64Main() in platform.c.
+ *   3. Expansion pak (8 MB RDRAM) is REQUIRED for the VMA to match.
  *
  * Register conventions (MIPS o32 ABI):
  *   $zero / $0    — always zero
@@ -124,12 +127,6 @@ __n64_boot:
     li      $t4, 0xA4600000    /* PI_BASE (KSEG1 uncached)                  */
     li      $t5, 0x1FFFFFFF    /* physical-address mask                     */
 
-    /* DIAG: bypass PI DMA — N64Main is within IPL3's 1MB copy, already in
-     * RDRAM.  Jump to .Ltext_done to skip the DMA wait loops entirely.
-     * Remove this bypass once the blue-screen diagnostic confirms boot works. */
-    b       .Ltext_done
-    nop
-
     /* Wait for PI idle (in case IPL3 DMA is still finishing) */
 .Lpi_idle_text:
     lw      $t6, 0x10($t4)     /* read PI_STATUS; BE CPU gets BE value       */
@@ -202,10 +199,6 @@ __n64_boot:
     beqz    $t2, .Ldata_done
     nop
 
-    /* DIAG: bypass data DMA along with text DMA bypass above. */
-    b       .Ldata_done
-    nop
-
 .Lpi_idle_data:
     lw      $t6, 0x10($t4)
     andi    $t6, $t6, 0x03
@@ -236,6 +229,18 @@ __n64_boot:
 
     li      $t6, 0x02
     sw      $t6, 0x10($t4)
+
+    /* Writeback and invalidate dcache for the written .data range.
+     * DMA writes directly to RDRAM, bypassing dcache — flush so CPU
+     * reads see the new data values.                                     */
+    sync
+    la      $t0, __data_start
+    la      $t1, __data_end
+.Ldata_dcache_flush:
+    cache   0x15, 0($t0)
+    addiu   $t0, $t0, 32
+    bne     $t0, $t1, .Ldata_dcache_flush
+    nop
 .Ldata_done:
 
     /* -----------------------------------------------------------------------

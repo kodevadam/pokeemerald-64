@@ -23,8 +23,9 @@ ENTRY(__n64_boot)
 MEMORY
 {
     /* RDRAM — 4MB base + 4MB expansion pak = 8MB total.
-     * We reserve the low 1KB for N64 exception vectors.
-     * Code and writable data live here; large rodata stays in ROM.           */
+     * Expansion pak REQUIRED: .boot VMA = 0x807FC000 (top of 8MB RDRAM).
+     * .text / .data are DMA'd to 0x80000400+ by crt0.s at boot.
+     * Low 1KB (0x80000000-0x800003FF) is used for exception vectors.        */
     RDRAM  (rwx) : ORIGIN = 0x80000400, LENGTH = 8M - 0x400
 
     /* ROM image: the full cartridge space via KSEG1 uncached (0xB0000000+).
@@ -61,12 +62,19 @@ SECTIONS
     } > ROM
 
     /* ------------------------------------------------------------------ */
-    /*  Boot / entry stub — runs in RDRAM at 0x80000400.                  */
-    /*  IPL3 copies ROM[0x1000..] → RDRAM[0x80000000..].                  */
-    /*  The .n64header section includes a 0x400-byte zero pad after the   */
-    /*  4KB IPL3 region so crt0.s code lands at RDRAM 0x80000400.         */
+    /*  Boot / entry stub — loaded by libdragon IPL3 to top of RDRAM.    */
+    /*                                                                     */
+    /*  The libdragon IPL3 reads ROM[0x1040] (= 0x4000, 16 KB), DMA's    */
+    /*  ROM[0x1048..0x5048] → RDRAM[RDRAM_SIZE-0x4000..RDRAM_SIZE-1],    */
+    /*  then jumps to 0x80000000 + RDRAM_SIZE - 0x4000.                  */
+    /*                                                                     */
+    /*  8 MB RDRAM (expansion pak required):                              */
+    /*    RDRAM_SIZE = 0x800000 → .boot lands at 0x807FC000               */
+    /*                                                                     */
+    /*  crt0.s (__n64_boot) runs from 0x807FC000, PI-DMA's .text to      */
+    /*  0x80000400 and .data to its RDRAM VMA, then calls N64Main().      */
     /* ------------------------------------------------------------------ */
-    .boot 0x80000400 :
+    .boot 0x807FC000 :
     {
         KEEP(*(.boot))
         KEEP(*(.boot.*))
@@ -74,8 +82,9 @@ SECTIONS
 
     /* ------------------------------------------------------------------ */
     /*  Code and writable data: VMA in RDRAM, LMA in ROM (copied at boot) */
+    /*  .text explicitly starts at 0x80000400 — crt0.s DMA's it here.    */
     /* ------------------------------------------------------------------ */
-    .text :
+    .text 0x80000400 :
     {
         __text_start = .;
         *(.text.unlikely .text.*_unlikely .text.unlikely.*)
