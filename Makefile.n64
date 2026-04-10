@@ -201,7 +201,7 @@ $(GFX): $(wildcard $(GFX_SRC)/*.c $(GFX_SRC)/*.h)
 # (honouring the explicit rules in graphics_file_rules.mk / spritesheet_rules.mk
 # which carry the right -mwidth/-mheight flags for spritesheets).
 GFX_STAMP := $(BUILD_DIR)/.gfx_done
-$(GFX_STAMP): $(GFX)
+$(GFX_STAMP): $(GFX) Makefile.n64 $(filter %.c, $(ALL_SRCS))
 	@mkdir -p $(dir $@)
 	@echo "[gfx] Scanning src/ for binary data paths..."
 	@# grep recursively through all files under src/ for quoted paths that look
