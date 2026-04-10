@@ -151,14 +151,11 @@ extern void N64_InitFlashRAM(void); /* flashram.c */
 /* Minimal VI init + screen fill used for staged boot diagnostics */
 static void DiagFillScreen(u16 colour)
 {
-    /* DIAG: use base-RDRAM framebuffer at 0x80340000 (physical 0x340000).
-     * After BSS (~0x803323F0), before stack (stack top = 0x803A0000).
-     * 0x80340000 + 320*240*2 = 0x80365800 — well within 4MB base RDRAM.
-     * Restore to __fb0_start once DMA + full memory layout is confirmed. */
-    /* Use KSEG1 (uncached 0xA0000000+) so writes reach RDRAM immediately.
-     * VI reads RDRAM directly; cached (KSEG0) writes may not be flushed yet. */
-    u16 *fb = (u16*)0xA0340000;
-    u32 physFB = 0x00340000;    /* physical = KSEG1_addr & 0x1FFFFFFF */
+    /* Use __fb0_start (linker-allocated at 0x807B0000).
+     * Convert KSEG0 → KSEG1 (uncached) so VI writes reach RDRAM immediately.
+     * Physical address = virtual & 0x1FFFFFFF */
+    u16 *fb = (u16*)((uintptr_t)__fb0_start | 0x20000000u);
+    u32 physFB = (u32)((uintptr_t)__fb0_start & 0x1FFFFFFFu);
     N64_HW_WR(N64_VI_BASE_REG, VI_STATUS_REG,  0x00003202);
     N64_HW_WR(N64_VI_BASE_REG, VI_ORIGIN_REG,  physFB);
     N64_HW_WR(N64_VI_BASE_REG, VI_WIDTH_REG,   320);
