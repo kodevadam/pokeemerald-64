@@ -85,6 +85,8 @@ LDFLAGS := -T n64.ld                   \
             -Map $(BUILD_DIR)/$(MAP_NAME) \
             -m elf32btsmip             \
             --gc-sections              \
+            -u N64Main                 \
+            -u N64_DispatchIntr        \
             -nostdlib                  \
             -static
 
