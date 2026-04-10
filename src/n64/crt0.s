@@ -132,14 +132,17 @@ __n64_boot:
 
     /* Writeback and invalidate dcache for the written .text range.
      * CACHE 0x15 = HIT_WRITEBACK_INVALIDATE_D: flushes dirty dcache lines
-     * to RDRAM so the icache can read the correct code bytes.              */
+     * to RDRAM so the icache can read the correct code bytes.
+     * Use sltu/bnez (not bne) because __text_end may not be 32-byte aligned,
+     * so a bne loop would overshoot and spin forever.                      */
     sync
     la      $t0, __text_start
     la      $t1, __text_end
 .Ltext_dcache_flush:
     cache   0x15, 0($t0)
     addiu   $t0, $t0, 32
-    bne     $t0, $t1, .Ltext_dcache_flush
+    sltu    $t3, $t0, $t1      /* $t3 = 1 while $t0 < $t1 (unsigned)      */
+    bnez    $t3, .Ltext_dcache_flush
     nop
 
     /* Invalidate instruction cache over the full .text range.
@@ -150,7 +153,8 @@ __n64_boot:
 .Ltext_icache_flush:
     cache   0x10, 0($t0)
     addiu   $t0, $t0, 32
-    bne     $t0, $t1, .Ltext_icache_flush
+    sltu    $t3, $t0, $t1
+    bnez    $t3, .Ltext_icache_flush
     nop
 
     /* -----------------------------------------------------------------------
@@ -178,7 +182,8 @@ __n64_boot:
 .Ldata_dcache_flush:
     cache   0x15, 0($t0)
     addiu   $t0, $t0, 32
-    bne     $t0, $t1, .Ldata_dcache_flush
+    sltu    $t3, $t0, $t1
+    bnez    $t3, .Ldata_dcache_flush
     nop
 .Ldata_done:
 
