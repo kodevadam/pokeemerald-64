@@ -12,6 +12,8 @@
 #    regardless of CPU mode; our HAL wraps those with N64_MMIO_RD/WR macros.
 # ============================================================
 
+SHELL := /bin/bash
+
 # ---------- Basic configuration ----------------------------
 FILE_NAME  := pokeemerald64
 BUILD_DIR  := build/n64
@@ -47,7 +49,7 @@ CHARMAP     := charmap.txt
 # -G0          : no small-data section (gp-relative addressing off — we have no gp)
 # -mno-abicalls: no PIC, direct calls (bare-metal)
 # -fno-pic     : no position-independent code
-ARCH_FLAGS := -mips3 -mabi=32 -EB -G0 -mno-abicalls -fno-pic
+ARCH_FLAGS := -mips3 -mabi=32 -EB -G0 -mno-abicalls -fno-pic -mhard-float
 
 CFLAGS := $(ARCH_FLAGS)                \
            -O2                         \
