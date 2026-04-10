@@ -66,25 +66,11 @@ void             *__n64_intr_vector    = NULL;
  * --------------------------------------------------------------------- */
 /* N64_HW_RD / N64_HW_WR are defined in n64/asm_defs.h */
 
-/* -----------------------------------------------------------------------
- * N64_InitMI — Memory Interface
- * Enable all MI interrupts that we care about.
- * --------------------------------------------------------------------- */
-static void N64_InitMI(void)
-{
-    /* Set MI mode: clear DP interrupt, set upper mode */
-    N64_HW_WR(N64_MI_BASE_REG, MI_MODE_REG, 0x0500);
+/* N64_InitMI removed — MI_MODE write (0x0500) stalls the SC64 PI bus.
+ * MI_INTR_MASK is written inline in N64Main() after the YELLOW diagnostic.
+ * SC64 IPL3 already configured MI_MODE correctly; we must not touch it.
 
-    /* Enable VI, AI, SI, PI, DP interrupts in MI mask.
-     * MI mask write format: bits 1,3,5,7,9,11 = set mask for SP,SI,AI,VI,PI,DP */
-    N64_HW_WR(N64_MI_BASE_REG, MI_INTR_MASK_REG,
-          (1 << 3)   /* SI set */
-        | (1 << 5)   /* AI set */
-        | (1 << 7)   /* VI set */
-        | (1 << 9)); /* PI set */
-}
-
-/* N64_InitRI removed — do NOT reinitialize the RDRAM Interface after IPL3.
+ * N64_InitRI removed — do NOT reinitialize the RDRAM Interface after IPL3.
  * The HLE IPL3 (SC64 firmware / emulator) sets RI registers correctly.
  * Writing RI_CONFIG/RI_REFRESH with wrong values instantly corrupts all
  * RDRAM access, crashing the CPU before a single frame is rendered. */
@@ -212,9 +198,10 @@ void N64Main(void)
     /* YELLOW = memsets done */
     DIAG(0xFFC1);
 
-    /* MI init inline — one DIAG per register write so we can pinpoint any hang */
-    N64_HW_WR(N64_MI_BASE_REG, MI_MODE_REG, 0x0500);
-    /* CYAN = MI_MODE write done */
+    /* MI init — do NOT write MI_MODE (0x0500 sets EBUS_TEST_MODE which stalls
+     * the SC64 bus).  SC64 IPL3 already configured MI correctly; we only need
+     * to unmask the interrupts we care about. */
+    /* CYAN = about to write MI_INTR_MASK */
     DIAG(0x07FF);
 
     N64_HW_WR(N64_MI_BASE_REG, MI_INTR_MASK_REG,
