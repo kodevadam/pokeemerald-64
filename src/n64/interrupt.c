@@ -97,6 +97,15 @@ void N64_IntrEnable(u16 gbaFlags)
  * then reads MI_INTR to find which N64 interrupt fired and dispatches
  * the corresponding GBA-style callback.
  * --------------------------------------------------------------------- */
+/* Handler-internal diagnostic: fill the screen via KSEG1 (uncached) so the
+ * VI sees it immediately.  Used only during boot to trace handler execution.
+ * Each fill overwrites the previous; the last stable colour shows on screen. */
+extern u8 __fb0_start[];
+#define HDIAG(c) do { \
+    volatile u16 *_fb = (volatile u16 *)((uintptr_t)__fb0_start | 0x20000000u); \
+    for (int _i = 0; _i < 320*240; _i++) _fb[_i] = (c); \
+} while(0)
+
 void N64_DispatchIntr(void)
 {
     /* Read CP0 Cause register */
@@ -112,6 +121,9 @@ void N64_DispatchIntr(void)
      * that re-entry cannot happen with a stale MI_INTR pending bit. */
     u32 miIntr = MI_INTR_RD();
 
+    /* HDIAG: ORANGE = handler entered, acks about to run */
+    HDIAG(0xFBC1);
+
     /* Acknowledge all hardware interrupts immediately */
     if (miIntr & MI_INTR_VI) N64_HW_WR(N64_VI_BASE_REG, VI_CURRENT_REG, 0);
     if (miIntr & MI_INTR_SI) N64_HW_WR(N64_SI_BASE_REG, SI_STATUS_REG, 0);
@@ -123,6 +135,8 @@ void N64_DispatchIntr(void)
      * VI interrupt — VBlank / VCount / HBlank
      * (Already acknowledged above via VI_CURRENT write)
      * ------------------------------------------------------------------ */
+    /* HDIAG: PURPLE = about to run VI handler */
+    HDIAG(0x783F);
     if (miIntr & MI_INTR_VI) {
         /* The VI interrupt fires at half-line 2 — once per frame.
          * Treat every VI interrupt as the GBA VBlank event.
@@ -162,6 +176,8 @@ void N64_DispatchIntr(void)
     /* ------------------------------------------------------------------
      * AI interrupt — audio buffer empty; refill it
      * ------------------------------------------------------------------ */
+    /* HDIAG: MAGENTA = about to run AI handler */
+    HDIAG(0xF83F);
     if (miIntr & MI_INTR_AI) {
         extern void N64_AudioRefill(void);
         N64_AudioRefill();
@@ -170,6 +186,8 @@ void N64_DispatchIntr(void)
     /* ------------------------------------------------------------------
      * SI interrupt — controller data ready
      * ------------------------------------------------------------------ */
+    /* HDIAG: WHITE = about to run SI handler */
+    HDIAG(0xFFFF);
     if (miIntr & MI_INTR_SI) {
         extern void N64_ControllerReadDone(void);
         N64_ControllerReadDone();
@@ -181,6 +199,8 @@ void N64_DispatchIntr(void)
     /* ------------------------------------------------------------------
      * PI interrupt — DMA done (e.g. FlashRAM write complete)
      * ------------------------------------------------------------------ */
+    /* HDIAG: GREEN = about to run PI/SP/DP handlers */
+    HDIAG(0x07C1);
     if (miIntr & MI_INTR_PI) {
         extern void N64_PiDmaDone(void);
         N64_PiDmaDone();
@@ -203,4 +223,7 @@ void N64_DispatchIntr(void)
     if (miIntr & MI_INTR_DP) {
         N64_HW_WR(N64_DP_BASE_REG, 0x0C, 0);   /* DPC_STATUS: ack        */
     }
+
+    /* HDIAG: BLUE = handler fully complete, ERET should return to N64Main */
+    HDIAG(0x003F);
 }
