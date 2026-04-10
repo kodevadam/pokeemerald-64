@@ -202,8 +202,25 @@ void N64Main(void)
     /* CYAN = InitMI done */
     DIAG(0x07FF);
 
-    N64_InitPI();
-    /* MAGENTA = InitPI done */
+    /* N64_InitPI — add sub-step fills to find which write stalls.
+     * PI_STATUS = 3 (RESET_CONTROLLER | CLR_INTR) is the most suspicious.
+     * DOM1 timing values from N64 libdragon reference; DOM2 for FlashRAM. */
+    DIAG(0xF001);  /* dim red = about to write PI_STATUS */
+    N64_HW_WR(N64_PI_BASE_REG, PI_STATUS_REG, 2);    /* CLR_INTR only (not RESET) */
+    DIAG(0xF801);  /* bright red = PI_STATUS done */
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_LAT_REG, 0x40);
+    DIAG(0xF841);  /* red+blue tint = LAT done */
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_PWD_REG, 0x12);
+    DIAG(0xF881);  /* red+green tint = PWD done */
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_PGS_REG, 0x07);
+    DIAG(0xF8C1);  /* red+more green = PGS done */
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_RLS_REG, 0x03);
+    DIAG(0xF901);  /* orange-red = RLS done, all DOM1 done */
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_LAT_REG, 0x05);
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_PWD_REG, 0x0C);
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_PGS_REG, 0x02);
+    N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_RLS_REG, 0x02);
+    /* MAGENTA = all PI timing done */
     DIAG(0xF83F);
 
     N64_InitSP();
