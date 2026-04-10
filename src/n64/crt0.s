@@ -92,11 +92,14 @@ __n64_boot:
     nop
     /* END DIAG-RED -------------------------------------------------------- */
 
-    /* Disable all interrupts and clear BEV (use normal exception vectors) */
+    /* Disable all interrupts and clear BEV (use normal exception vectors).
+     * BEV = bit 22 (0x00400000); IE = bit 0; EXL = bit 1; ERL = bit 2.
+     * Must clear BEV so that when IE is set later, exceptions/interrupts
+     * vector to our handlers at 0x80000000 instead of PIF ROM 0xBFC00380. */
     mfc0    $t0, $12            /* read CP0 Status                        */
-    li      $t1, ~0x00010001   /* clear IE (bit 0) and EXL (not needed)  */
+    li      $t1, ~0x00400007   /* clear BEV (bit22), ERL (bit2), EXL (bit1), IE (bit0) */
     and     $t0, $t0, $t1
-    ori     $t0, $t0, 0x0400   /* CP0 usable                              */
+    ori     $t0, $t0, 0x0400   /* set IM2 (bit10) — enable RCP interrupt mask */
     mtc0    $t0, $12
 
     /* Set up stack — DIAG: use base RDRAM (0x803A0000) to work on 4MB N64s

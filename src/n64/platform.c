@@ -112,12 +112,15 @@ static void N64_InitPI(void)
  * --------------------------------------------------------------------- */
 static void N64_EnableCPUInterrupts(void)
 {
-    /* CP0 Status: set IE (global enable) and IM2 (RCP interrupt mask) */
+    /* CP0 Status: clear BEV so interrupts go to our handlers at 0x80000180
+     * (not PIF ROM at 0xBFC00380), then set IE and IM2.
+     * BEV = bit 22 = 0x00400000.  crt0.s was supposed to clear it but had
+     * a wrong mask (~0x00010001 instead of ~0x00400007). */
     u32 sr;
     asm volatile (
         "mfc0  %0, $12\n\t"
-        "ori   %0, %0, 0x0401\n\t"   /* IE=1, IM2=1 */
-        "and   %0, %0, ~0x6\n\t"     /* clear EXL, ERL */
+        "ori   %0, %0, 0x0401\n\t"     /* IE=1, IM2=1 */
+        "and   %0, %0, ~0x00400006\n\t" /* clear BEV (bit22), EXL (bit1), ERL (bit2) */
         "mtc0  %0, $12\n\t"
         : "=r"(sr)
     );
@@ -245,11 +248,18 @@ void N64Main(void)
     }
 
     N64_InitAI();
-    N64_InitInput();
-    N64_InitFlashRAM();
-    N64_EnableCPUInterrupts();
+    /* BLUE = InitAI done */
+    DIAG(0x003F);
 
-    /* (game starts — no diagnostic fill here; GREEN stays until first frame) */
+    N64_InitInput();
+    /* CYAN = InitInput done */
+    DIAG(0x07FF);
+
+    N64_InitFlashRAM();  /* no-op: sFlashRAMPresent = 0 */
+
+    N64_EnableCPUInterrupts();
+    /* YELLOW = interrupts enabled; about to call AgbMain */
+    DIAG(0xFFC1);
 
     {
         u32 count;
