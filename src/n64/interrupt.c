@@ -97,22 +97,6 @@ void N64_IntrEnable(u16 gbaFlags)
  * then reads MI_INTR to find which N64 interrupt fired and dispatches
  * the corresponding GBA-style callback.
  * --------------------------------------------------------------------- */
-
-/* -----------------------------------------------------------------------
- * Targeted boot diagnostic fills for PI/SP/DP tail section.
- * Last stable colour on screen identifies the stall point:
- *   ORANGE  (0xFBC1)  entering tail section, PI block next
- *   TEAL    (0x051F)  PI done, SP block next
- *   CHART   (0x7FC1)  SP done, DP block next
- *   BLUE    (0x003F)  all blocks done — handler is returning cleanly
- *   YELLOW  (0xFFC1)  handler returned, N64Main resumed (success!)
- * --------------------------------------------------------------------- */
-extern u8 __fb0_start[];
-#define HDIAG(c) do { \
-    volatile u16 *_fb = (volatile u16 *)((uintptr_t)__fb0_start | 0x20000000u); \
-    for (int _i = 0; _i < 320*240; _i++) _fb[_i] = (c); \
-} while(0)
-
 void N64_DispatchIntr(void)
 {
     /* Read CP0 Cause register */
@@ -202,36 +186,13 @@ void N64_DispatchIntr(void)
     }
 
     /* ------------------------------------------------------------------
-     * Tail section: PI / SP / DP handlers.
-     * All three were already acknowledged in the early-ack block above;
-     * the duplicate ack writes have been removed to avoid re-triggering
-     * any bus-stall on the second write to the same register.
-     * HDIAG fills bracket each block so the last visible colour on screen
-     * identifies exactly which block caused the previous hang.
+     * PI interrupt — DMA done (e.g. FlashRAM write complete)
+     * Acked above; only the application callback is needed here.
      * ------------------------------------------------------------------ */
-
-    /* HDIAG: ORANGE = entering tail section, about to check PI */
-    HDIAG(0xFBC1);
-
-    /* PI interrupt — DMA done (e.g. FlashRAM write complete)
-     * Acked above; only the application callback is needed here. */
     if (miIntr & MI_INTR_PI) {
         extern void N64_PiDmaDone(void);
         N64_PiDmaDone();
     }
 
-    /* HDIAG: TEAL = PI done, about to check SP */
-    HDIAG(0x051F);
-
-    /* SP interrupt — RSP task done (unused; acked above) */
-    /* (no callback — block intentionally empty) */
-
-    /* HDIAG: CHART = SP done, about to check DP */
-    HDIAG(0x7FC1);
-
-    /* DP interrupt — RDP done (unused; acked above) */
-    /* (no callback — block intentionally empty) */
-
-    /* HDIAG: BLUE = all handlers done, handler returning to N64Main */
-    HDIAG(0x003F);
+    /* SP / DP interrupts — unused; acked above, no callbacks needed */
 }
