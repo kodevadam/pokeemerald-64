@@ -1,0 +1,9 @@
+@
+@ DO NOT MODIFY THIS FILE! It is auto-generated from data/maps/Route104_PrototypePrettyPetalFlowerShop/map.json
+@
+
+	.align 2
+
+Route104_PrototypePrettyPetalFlowerShop_MapEvents::
+	map_events NULL, NULL, NULL, NULL
+
