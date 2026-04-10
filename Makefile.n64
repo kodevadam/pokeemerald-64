@@ -35,9 +35,10 @@ CHKSUM64 := $(BUILD_DIR)/tools/n64crc
 CHKSUM64_SRC := tools/n64crc.c
 
 # Data processing tools (host native)
-PREPROC := tools/preproc/preproc
-GFX     := tools/gbagfx/gbagfx
-CHARMAP := charmap.txt
+PREPROC     := tools/preproc/preproc
+PREPROC_SRC := tools/preproc
+GFX         := tools/gbagfx/gbagfx
+CHARMAP     := charmap.txt
 
 # ---------- Compiler flags --------------------------------
 # -mips3       : MIPS III ISA  (VR4300 supports MIPS III)
@@ -164,17 +165,23 @@ DATA_OBJS   := $(patsubst data/%.s, $(BUILD_DIR)/data/%.o, $(DATA_ASM_SRCS))
 ALL_OBJS    := $(C_OBJS) $(ASM_OBJS) $(DATA_OBJS)
 
 # ---------- Build rules -----------------------------------
-.PHONY: all clean rom crc-tool
+.PHONY: all clean rom crc-tool preproc-tool
 
 all: rom
 
-rom: crc-tool $(BUILD_DIR)/$(ROM_NAME)
+rom: crc-tool preproc-tool $(BUILD_DIR)/$(ROM_NAME)
 
 # Build the N64 CRC fixer tool (host native, not MIPS)
 crc-tool: $(CHKSUM64)
 $(CHKSUM64): $(CHKSUM64_SRC)
 	@mkdir -p $(dir $@)
 	gcc -O2 -o $@ $<
+
+# Build the preproc tool (host native C++11)
+# If the binary is already present and newer than sources, skip rebuild.
+preproc-tool: $(PREPROC)
+$(PREPROC): $(wildcard $(PREPROC_SRC)/*.cpp $(PREPROC_SRC)/*.h)
+	$(MAKE) -C $(PREPROC_SRC)
 
 # Link ELF then extract raw binary for ROM
 $(BUILD_DIR)/$(ROM_NAME): $(BUILD_DIR)/$(ELF_NAME)
@@ -204,9 +211,11 @@ $(BUILD_DIR)/$(ELF_NAME): $(ALL_OBJS) n64.ld
 
 # Compile C — run preproc first to handle INCBIN_* macros (embeds binary data)
 # Pipeline: C source → CPP preprocess → preproc (expands INCBIN to hex) → compile
+# set -o pipefail: fail the rule if any stage in the pipe fails (prevents
+# silent empty .o when preproc is missing)
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -E $< | $(PREPROC) -i $< $(CHARMAP) | sed 's/__asm__("svc [0-9]*")/__asm__("break")/g' | $(CC) $(CFLAGS) -MMD -MP -x c -c - -o $@
+	set -o pipefail; $(CC) $(CFLAGS) -E $< | $(PREPROC) -i $< $(CHARMAP) | sed 's/__asm__("svc [0-9]*")/__asm__("break")/g' | $(CC) $(CFLAGS) -MMD -MP -x c -c - -o $@
 
 # Assemble .s (N64 platform sources)
 $(BUILD_DIR)/%.o: %.s
