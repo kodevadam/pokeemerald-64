@@ -174,15 +174,29 @@ static void DiagFillScreen(u16 colour)
 
 void N64Main(void)
 {
-    /* Inline diagnostic fill via KSEG1 (uncached) — VI sees it immediately.
-     * RGBA5551: BLUE=0x003F, YELLOW=0xFFC1, CYAN=0x07FF,
-     *           MAGENTA=0xF83F, ORANGE=0xF1E1, GREEN=0x07C1, WHITE=0xFFFF */
+    /* DIAG: fill fb0 via KSEG1 (uncached) so VI sees it immediately.
+     * volatile u16* prevents GCC -O2 from eliminating consecutive fills
+     * as dead stores. Each fill has a distinct hardware-register write
+     * between it and the next, so they can never be merged.
+     *
+     * Boot colour legend (last colour on screen = last step completed):
+     *   BLUE    0x003F  N64Main() reached (set by DiagFillScreen)
+     *   YELLOW  0xFFC1  memsets done
+     *   CYAN    0x07FF  MI_MODE write done
+     *   RED     0xF801  MI_INTR_MASK write done
+     *   ORANGE  0xFBC1  PI_STATUS (CLR_INTR) write done
+     *   PURPLE  0x783F  DOM1 timing writes done
+     *   MAGENTA 0xF83F  DOM2 timing writes done
+     *   WHITE   0xFFFF  InitSP done
+     *   GREEN   0x07C1  InitVI done
+     *   (game starts after GREEN)
+     */
 #define DIAG(c) do { \
-    u16 *__fb = (u16*)((uintptr_t)__fb0_start | 0x20000000u); \
+    volatile u16 *__fb = (volatile u16*)((uintptr_t)__fb0_start | 0x20000000u); \
     for (int __i = 0; __i < 320*240; __i++) __fb[__i] = (c); \
 } while(0)
 
-    /* STAGE 0: BLUE = N64Main reached */
+    /* BLUE = N64Main reached */
     DiagFillScreen(0x003F);
 
     __n64_pltt_buf = __sw_palette_start;
@@ -198,41 +212,48 @@ void N64Main(void)
     /* YELLOW = memsets done */
     DIAG(0xFFC1);
 
-    N64_InitMI();
-    /* CYAN = InitMI done */
+    /* MI init inline — one DIAG per register write so we can pinpoint any hang */
+    N64_HW_WR(N64_MI_BASE_REG, MI_MODE_REG, 0x0500);
+    /* CYAN = MI_MODE write done */
     DIAG(0x07FF);
 
-    /* N64_InitPI diagnostic sub-steps.
-     * Colors you will see on screen (all are visually distinct):
-     *   RED    (0xF801) = about to write PI_STATUS
-     *   ORANGE (0xFBC1) = PI_STATUS done; about to write DOM1 timing
-     *   PURPLE (0x783F) = DOM1 timing done; about to write DOM2 timing
-     *   MAGENTA(0xF83F) = DOM2 timing done; PI init complete
-     * Whichever color you DON'T see means the write after the previous
-     * color is what hangs. */
-    DIAG(0xF801);  /* RED — about to write PI_STATUS */
-    N64_HW_WR(N64_PI_BASE_REG, PI_STATUS_REG, 2);    /* CLR_INTR only (bit1); skip RESET_CONTROLLER */
-    DIAG(0xFBC1);  /* ORANGE — PI_STATUS done; writing DOM1 timing */
+    N64_HW_WR(N64_MI_BASE_REG, MI_INTR_MASK_REG,
+          (1 << 3)   /* SET_SI */
+        | (1 << 5)   /* SET_AI */
+        | (1 << 7)   /* SET_VI */
+        | (1 << 9)); /* SET_PI */
+    /* RED = MI_INTR_MASK write done */
+    DIAG(0xF801);
+
+    /* PI init inline — CLR_INTR only (bit 1); do NOT write RESET_CONTROLLER
+     * (bit 0) as that can stall the SC64 PI bus indefinitely. */
+    N64_HW_WR(N64_PI_BASE_REG, PI_STATUS_REG, 2);
+    /* ORANGE = PI_STATUS done */
+    DIAG(0xFBC1);
+
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_LAT_REG, 0x40);
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_PWD_REG, 0x12);
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_PGS_REG, 0x07);
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_RLS_REG, 0x03);
-    DIAG(0x783F);  /* PURPLE — DOM1 done; writing DOM2 timing */
+    /* PURPLE = DOM1 timing done */
+    DIAG(0x783F);
+
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_LAT_REG, 0x05);
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_PWD_REG, 0x0C);
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_PGS_REG, 0x02);
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_RLS_REG, 0x02);
-    DIAG(0xF83F);  /* MAGENTA — all PI timing done */
+    /* MAGENTA = DOM2 timing done — all PI init complete */
+    DIAG(0xF83F);
 
     N64_InitSP();
-    /* ORANGE = InitSP done */
-    DIAG(0xF1E1);
+    /* WHITE = InitSP done */
+    DIAG(0xFFFF);
 
     N64_InitVI();
-    /* GREEN = InitVI done */
+    /* GREEN = InitVI done; fill both framebuffers */
     DIAG(0x07C1);
     {
-        u16 *fb1 = (u16*)((uintptr_t)__fb1_start | 0x20000000u);
+        volatile u16 *fb1 = (volatile u16*)((uintptr_t)__fb1_start | 0x20000000u);
         for (int i = 0; i < 320 * 240; i++) fb1[i] = 0x07C1;
     }
 
@@ -241,12 +262,7 @@ void N64Main(void)
     N64_InitFlashRAM();
     N64_EnableCPUInterrupts();
 
-    /* WHITE = all init done, AgbMain about to start */
-    DIAG(0xFFFF);
-    {
-        u16 *fb1 = (u16*)((uintptr_t)__fb1_start | 0x20000000u);
-        for (int i = 0; i < 320 * 240; i++) fb1[i] = 0xFFFF;
-    }
+    /* (game starts — no diagnostic fill here; GREEN stays until first frame) */
 
     {
         u32 count;
