@@ -82,8 +82,8 @@ __n64_boot:
      * Use KSEG1 (uncached, 0xA0000000+) so writes go directly to RDRAM —
      * VI reads RDRAM directly and won't see cached-but-not-written-back data */
     lui     $t2, 0xA034             /* $t2 = 0xA0340000 (KSEG1 uncached)     */
-    lui     $t3, 0xA034
-    ori     $t3, $t3, 0x5800        /* $t3 = 0xA0345800 (end: +320*240*2)    */
+    lui     $t3, 0xA036
+    ori     $t3, $t3, 0x5800        /* $t3 = 0xA0365800 (end: 0xA0340000+320*240*2) */
     li      $t1, 0xF801F801         /* two red pixels packed into one word    */
 .Ldiag_red_fill:
     sw      $t1, 0($t2)
@@ -108,63 +108,26 @@ __n64_boot:
     la      $gp, _gp
 
     /* -----------------------------------------------------------------------
-     * Copy .text from ROM (LMA) to RDRAM (VMA) using PI DMA.
+     * Copy .text from ROM (KSEG1) to RDRAM (KSEG0) word by word.
      *
-     * CPU word-by-word reads from KSEG1 (PI bus) take ~4 µs each.
-     * For 2.85 MB that is 10+ seconds of black screen before boot.
-     * PI DMA (Cart→DRAM) transfers at ~50 MB/s — about 60 ms total.
+     * PI DMA hangs on SC64 hardware in this early-boot context (same symptom
+     * observed in ipl3.s development).  Use a simple CPU word copy instead:
+     * __text_lma is already a KSEG1 address (0xB0000000+), so each LW goes
+     * directly to the PI cart bus without any DMA setup.
      *
-     * PI DMA register layout (base 0xA4600000, big-endian):
-     *   +0x00  PI_DRAM_ADDR  — physical RDRAM destination
-     *   +0x04  PI_CART_ADDR  — physical cart source (0x10000000 + ROM offset)
-     *   +0x08  PI_RD_LEN     — (length-1); writing triggers Cart→DRAM DMA
-     *   +0x10  PI_STATUS     — bit0=DMA_BUSY, bit1=IO_BUSY; write 2=clr_intr
-     *
-     * CPU is compiled big-endian (-EB), matching N64 hardware register
-     * endianness.  No byte-swapping needed: SW writes the value directly.
+     * Speed: ~400 ns/word → 2.85 MB ≈ 300 ms.  Acceptable for a one-time
+     * boot screen — the DIAG-RED fill is visible during the copy.
      * --------------------------------------------------------------------- */
-
-    li      $t4, 0xA4600000    /* PI_BASE (KSEG1 uncached)                  */
-    li      $t5, 0x1FFFFFFF    /* physical-address mask                     */
-
-    /* Wait for PI idle (in case IPL3 DMA is still finishing) */
-.Lpi_idle_text:
-    lw      $t6, 0x10($t4)     /* read PI_STATUS; BE CPU gets BE value       */
-    andi    $t6, $t6, 0x03     /* DMA_BUSY(b0) | IO_BUSY(b1)                */
-    bnez    $t6, .Lpi_idle_text
+    la      $t0, __text_lma    /* KSEG1 ROM source  (e.g. 0xB0001890)      */
+    la      $t1, __text_start  /* KSEG0 RDRAM dest  = 0x80000400           */
+    la      $t2, __text_end    /* RDRAM end         = __text_end           */
+.Lcopy_text:
+    lw      $t3, 0($t0)        /* read word from cart ROM (uncached PI bus) */
+    sw      $t3, 0($t1)        /* write word to RDRAM (cached KSEG0)       */
+    addiu   $t0, $t0, 4
+    addiu   $t1, $t1, 4
+    bne     $t1, $t2, .Lcopy_text
     nop
-
-    /* Clear any pending PI interrupt */
-    li      $t6, 0x02           /* PI_STATUS: CLR_INTR                       */
-    sw      $t6, 0x10($t4)
-
-    /* PI_DRAM_ADDR = physical(__text_start) */
-    la      $t0, __text_start
-    and     $t0, $t0, $t5      /* strip KSEG bits → physical                */
-    sw      $t0, 0x00($t4)
-
-    /* PI_CART_ADDR = physical(__text_lma) */
-    la      $t0, __text_lma
-    and     $t0, $t0, $t5
-    sw      $t0, 0x04($t4)
-
-    /* PI_RD_LEN = (__text_end - __text_start) - 1  → triggers Cart→DRAM   */
-    la      $t0, __text_end
-    la      $t1, __text_start
-    subu    $t0, $t0, $t1      /* length                                    */
-    addiu   $t0, $t0, -1       /* length - 1                                */
-    sw      $t0, 0x08($t4)     /* write PI_RD_LEN — DMA starts now          */
-
-    /* Wait for DMA to complete */
-.Lpi_wait_text:
-    lw      $t6, 0x10($t4)
-    andi    $t6, $t6, 0x01     /* DMA_BUSY                                  */
-    bnez    $t6, .Lpi_wait_text
-    nop
-
-    /* Clear PI interrupt */
-    li      $t6, 0x02
-    sw      $t6, 0x10($t4)
 .Ltext_done:
 
     /* Writeback and invalidate dcache for the written .text range.
@@ -191,48 +154,24 @@ __n64_boot:
     nop
 
     /* -----------------------------------------------------------------------
-     * Copy initialised data sections from ROM (LMA) to RDRAM using PI DMA.
+     * Copy initialised data sections from ROM (KSEG1) to RDRAM word by word.
+     * PI DMA hangs on SC64; use CPU copy (data section is small, ~5 KB).
      * --------------------------------------------------------------------- */
-    la      $t0, __data_start
-    la      $t1, __data_end
-    subu    $t2, $t1, $t0      /* length */
-    beqz    $t2, .Ldata_done
+    la      $t0, __data_lma    /* KSEG1 ROM source                          */
+    la      $t1, __data_start  /* KSEG0 RDRAM destination                   */
+    la      $t2, __data_end    /* RDRAM end                                 */
+    beq     $t1, $t2, .Ldata_done  /* skip if no initialised data           */
+    nop
+.Lcopy_data:
+    lw      $t3, 0($t0)
+    sw      $t3, 0($t1)
+    addiu   $t0, $t0, 4
+    addiu   $t1, $t1, 4
+    bne     $t1, $t2, .Lcopy_data
     nop
 
-.Lpi_idle_data:
-    lw      $t6, 0x10($t4)
-    andi    $t6, $t6, 0x03
-    bnez    $t6, .Lpi_idle_data
-    nop
-
-    li      $t6, 0x02
-    sw      $t6, 0x10($t4)
-
-    /* PI_DRAM_ADDR = physical(__data_start) */
-    and     $t0, $t0, $t5
-    sw      $t0, 0x00($t4)
-
-    /* PI_CART_ADDR = physical(__data_lma) */
-    la      $t0, __data_lma
-    and     $t0, $t0, $t5
-    sw      $t0, 0x04($t4)
-
-    /* PI_RD_LEN = length - 1 */
-    addiu   $t2, $t2, -1
-    sw      $t2, 0x08($t4)
-
-.Lpi_wait_data:
-    lw      $t6, 0x10($t4)
-    andi    $t6, $t6, 0x01
-    bnez    $t6, .Lpi_wait_data
-    nop
-
-    li      $t6, 0x02
-    sw      $t6, 0x10($t4)
-
-    /* Writeback and invalidate dcache for the written .data range.
-     * DMA writes directly to RDRAM, bypassing dcache — flush so CPU
-     * reads see the new data values.                                     */
+    /* Writeback dcache for the written .data range so CPU reads see the
+     * new values (SW above wrote to dcache; flush it to RDRAM).           */
     sync
     la      $t0, __data_start
     la      $t1, __data_end
