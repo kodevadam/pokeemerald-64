@@ -134,13 +134,9 @@ void N64_DispatchIntr(void)
         _REG16(REG_OFFSET_VCOUNT)   = 0;
         _REG16(REG_OFFSET_DISPSTAT) |= DISPSTAT_VBLANK;
 
-        /* Print once at frame 1, 10, 60 so we can confirm VI is firing */
-        if (gN64VBlankCount == 1 || gN64VBlankCount == 10 || gN64VBlankCount == 60) {
-            extern void N64_DebugPrint(const char *);
-            if      (gN64VBlankCount == 1)  N64_DebugPrint("[N64] VBlank #1 fired");
-            else if (gN64VBlankCount == 10) N64_DebugPrint("[N64] VBlank #10 fired");
-            else                            N64_DebugPrint("[N64] VBlank #60 fired");
-        }
+        /* NOTE: N64_DebugPrint (IS-Viewer at 0xB3FF0014) removed — SC64 does
+         * not ACK PI bus write transactions to physical 0x13FF0014 (IS-Viewer
+         * range), causing an indefinite PI bus stall on first VBlank. */
 
         N64_RtcVBlankTick();
 

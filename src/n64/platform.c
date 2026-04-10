@@ -178,7 +178,11 @@ void N64Main(void)
      *   MAGENTA 0xF83F  DOM2 timing writes done
      *   WHITE   0xFFFF  InitSP done
      *   GREEN   0x07C1  InitVI done
-     *   (game starts after GREEN)
+     *   BLUE    0x003F  InitAI done
+     *   CYAN    0x07FF  InitInput done
+     *   RED     0xF801  about to enable interrupts (IE still 0)
+     *   YELLOW  0xFFC1  interrupts enabled + first handler returned
+     *   (game starts after YELLOW)
      */
 #define DIAG(c) do { \
     volatile u16 *__fb = (volatile u16*)((uintptr_t)__fb0_start | 0x20000000u); \
@@ -257,8 +261,11 @@ void N64Main(void)
 
     N64_InitFlashRAM();  /* no-op: sFlashRAMPresent = 0 */
 
+    /* RED = about to enable interrupts (VI/SI are unmasked but IE still 0) */
+    DIAG(0xF801);
+
     N64_EnableCPUInterrupts();
-    /* YELLOW = interrupts enabled; about to call AgbMain */
+    /* YELLOW = interrupts enabled + first handler returned cleanly */
     DIAG(0xFFC1);
 
     {
