@@ -40,6 +40,7 @@ CHKSUM64_SRC := tools/n64crc.c
 PREPROC     := tools/preproc/preproc
 PREPROC_SRC := tools/preproc
 GFX         := tools/gbagfx/gbagfx
+GFX_SRC     := tools/gbagfx
 CHARMAP     := charmap.txt
 
 # ---------- Compiler flags --------------------------------
@@ -169,11 +170,11 @@ DATA_OBJS   := $(patsubst data/%.s, $(BUILD_DIR)/data/%.o, $(DATA_ASM_SRCS))
 ALL_OBJS    := $(C_OBJS) $(ASM_OBJS) $(DATA_OBJS)
 
 # ---------- Build rules -----------------------------------
-.PHONY: all clean rom crc-tool preproc-tool
+.PHONY: all clean rom crc-tool preproc-tool gfx-tool
 
 all: rom
 
-rom: crc-tool preproc-tool $(BUILD_DIR)/$(ROM_NAME)
+rom: crc-tool preproc-tool gfx-tool $(BUILD_DIR)/$(ROM_NAME)
 
 # Build the N64 CRC fixer tool (host native, not MIPS)
 crc-tool: $(CHKSUM64)
@@ -186,6 +187,32 @@ $(CHKSUM64): $(CHKSUM64_SRC)
 preproc-tool: $(PREPROC)
 $(PREPROC): $(wildcard $(PREPROC_SRC)/*.cpp $(PREPROC_SRC)/*.h)
 	$(MAKE) -C $(PREPROC_SRC)
+
+# Build the gbagfx tool (host native) — converts PNG/PAL → binary graphics data
+gfx-tool: $(GFX)
+$(GFX): $(wildcard $(GFX_SRC)/*.c $(GFX_SRC)/*.h)
+	$(MAKE) -C $(GFX_SRC)
+
+# Pre-generate all binary graphics data referenced by INCBIN macros in C sources.
+# Without this, preproc fails at compile time when it tries to open the binary files.
+# This stamp is rebuilt only when gbagfx itself is newer (i.e., on first build or
+# after 'make clean').  It scans every C source for INCBIN_* paths, collects the
+# ones that don't exist yet, and makes one recursive invocation to build them all
+# (honouring the explicit rules in graphics_file_rules.mk / spritesheet_rules.mk
+# which carry the right -mwidth/-mheight flags for spritesheets).
+GFX_STAMP := $(BUILD_DIR)/.gfx_done
+$(GFX_STAMP): $(GFX)
+	@mkdir -p $(dir $@)
+	@echo "[gfx] Scanning C sources for INCBIN binary data..."
+	@MISSING=$$(grep -rh 'INCBIN_' $(filter %.c, $(ALL_SRCS)) 2>/dev/null | \
+	    grep -oP '(?<=")(graphics|data)/[^"]+(?=")' | sort -u | \
+	    while IFS= read -r f; do [ -f "$$f" ] || echo "$$f"; done); \
+	if [ -n "$$MISSING" ]; then \
+	    CNT=$$(echo "$$MISSING" | wc -l); \
+	    echo "[gfx] Building $$CNT missing binary file(s)..."; \
+	    $(MAKE) --no-print-directory -f Makefile.n64 $$MISSING; \
+	fi
+	@touch $@
 
 # Link ELF then extract raw binary for ROM
 $(BUILD_DIR)/$(ROM_NAME): $(BUILD_DIR)/$(ELF_NAME)
@@ -217,7 +244,9 @@ $(BUILD_DIR)/$(ELF_NAME): $(ALL_OBJS) n64.ld
 # Pipeline: C source → CPP preprocess → preproc (expands INCBIN to hex) → compile
 # set -o pipefail: fail the rule if any stage in the pipe fails (prevents
 # silent empty .o when preproc is missing)
-$(BUILD_DIR)/%.o: %.c
+# | $(GFX_STAMP): order-only prerequisite — all binary data files are ready before
+#   preproc is invoked (preproc opens them to inline their bytes as hex literals).
+$(BUILD_DIR)/%.o: %.c | $(GFX_STAMP)
 	@mkdir -p $(dir $@)
 	set -o pipefail; $(CC) $(CFLAGS) -E $< | $(PREPROC) -i $< $(CHARMAP) | sed 's/__asm__("svc [0-9]*")/__asm__("break")/g' | $(CC) $(CFLAGS) -MMD -MP -x c -c - -o $@
 
@@ -237,6 +266,11 @@ $(BUILD_DIR)/data/%.o: data/%.s
 # ---------- Data file generation rules ----------------------------
 # Generate 4bpp/8bpp/pal binary data from source files using gbagfx.
 # These are needed by INCBIN_U32 macros in game source files.
+# Explicit per-file rules (with special -mwidth/-mheight flags for spritesheets)
+# are supplied by the original GBA build system's rule files:
+include graphics_file_rules.mk
+include spritesheet_rules.mk
+# Fallback pattern rules for files not covered by the explicit rules above:
 %.4bpp:   %.png  ; $(GFX) $< $@
 %.8bpp:   %.png  ; $(GFX) $< $@
 %.gbapal: %.pal  ; $(GFX) $< $@
