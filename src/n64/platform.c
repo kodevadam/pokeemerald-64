@@ -202,26 +202,27 @@ void N64Main(void)
     /* CYAN = InitMI done */
     DIAG(0x07FF);
 
-    /* N64_InitPI — add sub-step fills to find which write stalls.
-     * PI_STATUS = 3 (RESET_CONTROLLER | CLR_INTR) is the most suspicious.
-     * DOM1 timing values from N64 libdragon reference; DOM2 for FlashRAM. */
-    DIAG(0xF001);  /* dim red = about to write PI_STATUS */
-    N64_HW_WR(N64_PI_BASE_REG, PI_STATUS_REG, 2);    /* CLR_INTR only (not RESET) */
-    DIAG(0xF801);  /* bright red = PI_STATUS done */
+    /* N64_InitPI diagnostic sub-steps.
+     * Colors you will see on screen (all are visually distinct):
+     *   RED    (0xF801) = about to write PI_STATUS
+     *   ORANGE (0xFBC1) = PI_STATUS done; about to write DOM1 timing
+     *   PURPLE (0x783F) = DOM1 timing done; about to write DOM2 timing
+     *   MAGENTA(0xF83F) = DOM2 timing done; PI init complete
+     * Whichever color you DON'T see means the write after the previous
+     * color is what hangs. */
+    DIAG(0xF801);  /* RED — about to write PI_STATUS */
+    N64_HW_WR(N64_PI_BASE_REG, PI_STATUS_REG, 2);    /* CLR_INTR only (bit1); skip RESET_CONTROLLER */
+    DIAG(0xFBC1);  /* ORANGE — PI_STATUS done; writing DOM1 timing */
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_LAT_REG, 0x40);
-    DIAG(0xF841);  /* red+blue tint = LAT done */
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_PWD_REG, 0x12);
-    DIAG(0xF881);  /* red+green tint = PWD done */
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_PGS_REG, 0x07);
-    DIAG(0xF8C1);  /* red+more green = PGS done */
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM1_RLS_REG, 0x03);
-    DIAG(0xF901);  /* orange-red = RLS done, all DOM1 done */
+    DIAG(0x783F);  /* PURPLE — DOM1 done; writing DOM2 timing */
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_LAT_REG, 0x05);
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_PWD_REG, 0x0C);
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_PGS_REG, 0x02);
     N64_HW_WR(N64_PI_BASE_REG, PI_BSD_DOM2_RLS_REG, 0x02);
-    /* MAGENTA = all PI timing done */
-    DIAG(0xF83F);
+    DIAG(0xF83F);  /* MAGENTA — all PI timing done */
 
     N64_InitSP();
     /* ORANGE = InitSP done */
