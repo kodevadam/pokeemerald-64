@@ -250,9 +250,13 @@ $(BUILD_DIR)/$(ELF_NAME): $(ALL_OBJS) n64.ld
 # Pipeline: C source → CPP preprocess → preproc (expands INCBIN to hex) → compile
 # set -o pipefail: fail the rule if any stage in the pipe fails (prevents
 # silent empty .o when preproc is missing)
-# | $(GFX_STAMP): order-only prerequisite — all binary data files are ready before
-#   preproc is invoked (preproc opens them to inline their bytes as hex literals).
-$(BUILD_DIR)/%.o: %.c | $(GFX_STAMP)
+# $(PREPROC) as a real (non-order-only) prerequisite: if preproc is rebuilt
+#   (first build, or after 'make clean'), all .o files are considered stale
+#   and get recompiled.  This prevents stale empty objects from an earlier
+#   run where preproc was not yet available.
+# | $(GFX_STAMP): order-only — all binary data files are ready before preproc
+#   is invoked (preproc opens them to inline their bytes as hex literals).
+$(BUILD_DIR)/%.o: %.c $(PREPROC) | $(GFX_STAMP)
 	@mkdir -p $(dir $@)
 	set -o pipefail; $(CC) $(CFLAGS) -E $< | $(PREPROC) -i $< $(CHARMAP) | sed 's/__asm__("svc [0-9]*")/__asm__("break")/g' | $(CC) $(CFLAGS) -MMD -MP -x c -c - -o $@
 
