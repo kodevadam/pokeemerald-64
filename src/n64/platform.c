@@ -216,17 +216,26 @@ void N64Main(void)
     N64_InitSP();   N64_DebugPrint("[N64] InitSP done");
     N64_InitVI();   N64_DebugPrint("[N64] InitVI done");
 
-    /* STAGE 1 DIAGNOSTIC: GREEN = N64_InitVI() completed + all MI/PI/SP init passed */
+    /* STAGE 1 DIAGNOSTIC: GREEN = N64_InitVI() completed + all MI/PI/SP init passed.
+     * Must use KSEG1 (uncached) writes so VI reads the new colour from RDRAM.
+     * RGBA5551 bright green = 0x07C1: R=0, G=31, B=0, A=1 */
     {
-        u16 *fb0 = (u16 *)__fb0_start;
-        u16 *fb1 = (u16 *)__fb1_start;
+        u16 *fb0 = (u16*)((uintptr_t)__fb0_start | 0x20000000u);
+        u16 *fb1 = (u16*)((uintptr_t)__fb1_start | 0x20000000u);
         for (int i = 0; i < 320 * 240; i++) { fb0[i] = 0x07C1; fb1[i] = 0x07C1; }
-        /* RGBA5551 bright green = 0x07C1: R=0, G=31, B=0, A=1 */
     }
     N64_InitAI();   N64_DebugPrint("[N64] InitAI done");
     N64_InitInput();N64_DebugPrint("[N64] InitInput done");
     N64_InitFlashRAM(); N64_DebugPrint("[N64] InitFlashRAM done");
     N64_EnableCPUInterrupts(); N64_DebugPrint("[N64] CPU interrupts enabled");
+
+    /* STAGE 2 DIAGNOSTIC: WHITE = all init done, AgbMain about to start.
+     * RGBA5551 white = 0xFFFF. */
+    {
+        u16 *fb0 = (u16*)((uintptr_t)__fb0_start | 0x20000000u);
+        u16 *fb1 = (u16*)((uintptr_t)__fb1_start | 0x20000000u);
+        for (int i = 0; i < 320 * 240; i++) { fb0[i] = 0xFFFF; fb1[i] = 0xFFFF; }
+    }
 
     /* ------------------------------------------------------------------
      * Seed the software TM1CNT_L register with the N64 CP0 Count register

@@ -137,22 +137,11 @@ static int sFlashRAMPresent = 0;
 
 void N64_InitFlashRAM(void)
 {
-    /* Attempt to read the FlashRAM status register.
-     * If status bits are within expected range, the chip is present. */
-    u32 status = FlashRAMReadStatus();
-
-    /* Valid FlashRAM status: bits 25-24 indicate the chip type.
-     * All valid states have bits 7-0 = 0 and bits 31-26 are type IDs.
-     * If the read returns 0xFFFFFFFF (all ones), no chip present. */
-    if (status != 0xFFFFFFFF && status != 0x00000000) {
-        sFlashRAMPresent = 1;
-    } else {
-        /* Try legacy detection: read a known byte and see if it's not 0xFF */
-        u8 probe[8] __attribute__((aligned(8)));
-        PiReadToRdram(FLASHRAM_PI_ADDR, probe, 8);
-        if (probe[0] != 0xFF || probe[1] != 0xFF)
-            sFlashRAMPresent = 1;
-    }
+    /* PI DMA hangs on SC64 hardware (same issue as in crt0.s before the
+     * CPU-copy fix).  Skip the PI DMA probe for now and leave flash saves
+     * disabled until PI DMA is confirmed working post-boot.
+     * sFlashRAMPresent = 0 causes all ReadFlash/WriteFlash calls to no-op. */
+    sFlashRAMPresent = 0;
 }
 
 /* -----------------------------------------------------------------------
