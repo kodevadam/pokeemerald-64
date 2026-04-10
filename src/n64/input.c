@@ -58,6 +58,9 @@
 #include "global.h"
 #include "n64/asm_defs.h"
 
+/* Forward declaration — defined later in this file */
+void N64_InputStartRead(void);
+
 /* -----------------------------------------------------------------------
  * N64 SI / PIF register access — byte-swap wrappers for big-endian MMIO
  * --------------------------------------------------------------------- */
