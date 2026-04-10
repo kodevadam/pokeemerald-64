@@ -225,6 +225,8 @@ void N64_ControllerReadDone(void)
     /* Write to software REG_KEYINPUT */
     _REG16(REG_OFFSET_KEYINPUT) = gbaKeys;
 
-    /* Kick off the next controller read for the next frame */
-    N64_InputStartRead();
+    /* Do NOT start the next read here — that would immediately trigger
+     * another SI interrupt, causing an infinite tight interrupt loop that
+     * starves N64Main.  The VI handler calls N64_InputStartRead() once
+     * per VBlank so the controller read rate is locked to 60 Hz.        */
 }
