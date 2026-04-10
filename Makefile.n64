@@ -203,14 +203,20 @@ $(GFX): $(wildcard $(GFX_SRC)/*.c $(GFX_SRC)/*.h)
 GFX_STAMP := $(BUILD_DIR)/.gfx_done
 $(GFX_STAMP): $(GFX)
 	@mkdir -p $(dir $@)
-	@echo "[gfx] Scanning C sources for INCBIN binary data..."
-	@MISSING=$$(grep -rh 'INCBIN_' $(filter %.c, $(ALL_SRCS)) 2>/dev/null | \
-	    grep -oP '(?<=")(graphics|data)/[^"]+(?=")' | sort -u | \
+	@echo "[gfx] Scanning src/ for binary data paths..."
+	@# grep recursively through all files under src/ for quoted paths that look
+	@# like binary data.  Do NOT filter by 'INCBIN_' first: multi-argument
+	@# INCBIN_U32("a", "b", "c") spreads continuation args onto separate lines
+	@# that lack the INCBIN_ keyword, so a line-level filter misses them.
+	@MISSING=$$(grep -rh '"graphics/\|"data/' src/ 2>/dev/null | \
+	    grep -oP '(?<=")(graphics|data)/[^"]+(?=")' | \
+	    grep -E '\.(4bpp|8bpp|gbapal|lz|rl|1bpp|bin)' | \
+	    sort -u | \
 	    while IFS= read -r f; do [ -f "$$f" ] || echo "$$f"; done); \
 	if [ -n "$$MISSING" ]; then \
 	    CNT=$$(echo "$$MISSING" | wc -l); \
-	    echo "[gfx] Building $$CNT missing binary file(s) (this takes a few minutes on first build)..."; \
-	    $(MAKE) --no-print-directory -j$$(nproc) -f Makefile.n64 $$MISSING; \
+	    echo "[gfx] Building $$CNT missing binary file(s) (first build takes a few minutes)..."; \
+	    $(MAKE) --no-print-directory -j$$(nproc) -f Makefile.n64 $$MISSING || true; \
 	fi
 	@touch $@
 
