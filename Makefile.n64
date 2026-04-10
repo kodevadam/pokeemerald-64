@@ -71,6 +71,8 @@ CFLAGS := $(ARCH_FLAGS)                \
            -DNDEBUG                    \
            -DBUGFIX                    \
            -D_FORTIFY_SOURCE=0         \
+           -I include                  \
+           -I include/n64              \
            -iquote include             \
            -iquote include/n64
 
