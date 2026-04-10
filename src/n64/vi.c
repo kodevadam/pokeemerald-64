@@ -52,13 +52,15 @@ u16 gN64GBAFramebuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
  * --------------------------------------------------------------------- */
 void N64_InitVI(void)
 {
-    gN64FrontBuffer = (u16 *)__fb0_start;
-    gN64BackBuffer  = (u16 *)__fb1_start;
+    /* Use KSEG1 (uncached) pointers so writes bypass D-cache and reach RDRAM
+     * immediately — VI reads RDRAM directly, not the D-cache.            */
+    gN64FrontBuffer = (u16 *)((uintptr_t)__fb0_start | 0x20000000u);
+    gN64BackBuffer  = (u16 *)((uintptr_t)__fb1_start | 0x20000000u);
     sDisplayFB      = 0;
 
-    /* Clear both framebuffers to black */
-    memset(__fb0_start, 0, N64_VI_WIDTH * N64_VI_HEIGHT * sizeof(u16));
-    memset(__fb1_start, 0, N64_VI_WIDTH * N64_VI_HEIGHT * sizeof(u16));
+    /* Clear both framebuffers to black (via KSEG1 — must reach RDRAM) */
+    memset((void *)((uintptr_t)__fb0_start | 0x20000000u), 0, N64_VI_WIDTH * N64_VI_HEIGHT * sizeof(u16));
+    memset((void *)((uintptr_t)__fb1_start | 0x20000000u), 0, N64_VI_WIDTH * N64_VI_HEIGHT * sizeof(u16));
 
     /* VI_STATUS: 16-bit colour, no gamma, no divot, no AA, progressive */
     VI_WR(VI_STATUS_REG,  0x00003202);
@@ -116,12 +118,12 @@ void N64_VISwapBuffers(void)
 
     if (sDisplayFB == 0) {
         sDisplayFB      = 1;
-        gN64FrontBuffer = (u16 *)__fb1_start;
-        gN64BackBuffer  = (u16 *)__fb0_start;
+        gN64FrontBuffer = (u16 *)((uintptr_t)__fb1_start | 0x20000000u);
+        gN64BackBuffer  = (u16 *)((uintptr_t)__fb0_start | 0x20000000u);
     } else {
         sDisplayFB      = 0;
-        gN64FrontBuffer = (u16 *)__fb0_start;
-        gN64BackBuffer  = (u16 *)__fb1_start;
+        gN64FrontBuffer = (u16 *)((uintptr_t)__fb0_start | 0x20000000u);
+        gN64BackBuffer  = (u16 *)((uintptr_t)__fb1_start | 0x20000000u);
     }
 }
 

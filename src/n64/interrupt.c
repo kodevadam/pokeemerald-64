@@ -151,6 +151,10 @@ void N64_DispatchIntr(void)
         if (gIntrTable[4])
             gIntrTable[4]();   /* VBlankIntr */
 
+        /* Signal VBlank to BIOS VBlankIntrWait() / IntrWait() */
+        INTR_CHECK |= INTR_FLAG_VBLANK;
+        gMain.intrCheck |= INTR_FLAG_VBLANK;
+
         _REG16(REG_OFFSET_DISPSTAT) &= ~DISPSTAT_VBLANK;
 
         /* Fire VCount interrupt every frame when enabled.
