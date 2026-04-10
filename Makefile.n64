@@ -209,8 +209,8 @@ $(GFX_STAMP): $(GFX)
 	    while IFS= read -r f; do [ -f "$$f" ] || echo "$$f"; done); \
 	if [ -n "$$MISSING" ]; then \
 	    CNT=$$(echo "$$MISSING" | wc -l); \
-	    echo "[gfx] Building $$CNT missing binary file(s)..."; \
-	    $(MAKE) --no-print-directory -f Makefile.n64 $$MISSING; \
+	    echo "[gfx] Building $$CNT missing binary file(s) (this takes a few minutes on first build)..."; \
+	    $(MAKE) --no-print-directory -j$$(nproc) -f Makefile.n64 $$MISSING; \
 	fi
 	@touch $@
 
