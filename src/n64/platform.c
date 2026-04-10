@@ -174,75 +174,62 @@ static void DiagFillScreen(u16 colour)
 
 void N64Main(void)
 {
-    /* ------------------------------------------------------------------
-     * STAGE 0 DIAGNOSTIC: if you see BLUE → N64Main() was called.
-     * If screen stays black → crt0.s crashed before reaching N64Main.
-     * ------------------------------------------------------------------ */
-    DiagFillScreen(0x003F);  /* RGBA5551 bright blue */
+    /* Inline diagnostic fill via KSEG1 (uncached) — VI sees it immediately.
+     * RGBA5551: BLUE=0x003F, YELLOW=0xFFC1, CYAN=0x07FF,
+     *           MAGENTA=0xF83F, ORANGE=0xF1E1, GREEN=0x07C1, WHITE=0xFFFF */
+#define DIAG(c) do { \
+    u16 *__fb = (u16*)((uintptr_t)__fb0_start | 0x20000000u); \
+    for (int __i = 0; __i < 320*240; __i++) __fb[__i] = (c); \
+} while(0)
 
-    /* ------------------------------------------------------------------
-     * Point software hardware buffers at linker-allocated RDRAM regions
-     * ------------------------------------------------------------------ */
+    /* STAGE 0: BLUE = N64Main reached */
+    DiagFillScreen(0x003F);
+
     __n64_pltt_buf = __sw_palette_start;
     __n64_vram_buf = __sw_vram_start;
     __n64_oam_buf  = __sw_oam_start;
 
-    /* Clear all software buffers */
     memset(__n64_pltt_buf, 0, 0x400);
     memset(__n64_vram_buf, 0, 0x18000);
     memset(__n64_oam_buf,  0, 0x400);
     memset(gN64IoRegs,     0, sizeof(gN64IoRegs));
-
-    /* REG_KEYINPUT (0x130) is active-LOW: all bits set = no keys pressed.
-     * The zero-init above sets it to 0x0000 (all keys "pressed"), which
-     * would cause ReadKeys() to see spurious button presses at startup. */
     *(u16 *)(gN64IoRegs + 0x130) = 0x03FF;
 
-    /* ------------------------------------------------------------------
-     * Hardware initialisation — order matters:
-     *   1. MI (interrupt controller) first so sub-systems can register
-     *   2. RI (RDRAM interface)
-     *   3. PI (cartridge bus) — needed for flash save init
-     *   4. SP (halt RSP)
-     *   5. VI (video) — sets up framebuffers and VI registers
-     *   6. AI (audio) — sets up AI DMA and sample rate
-     *   7. Input (SI) — initiates first controller poll
-     *   8. FlashRAM — detects save media
-     *   9. CPU interrupts — enable last
-     * ------------------------------------------------------------------ */
-    N64_DebugPrint("[N64] N64Main: start");
-    N64_InitMI();   N64_DebugPrint("[N64] InitMI done");
-    N64_InitPI();   N64_DebugPrint("[N64] InitPI done");
-    N64_InitSP();   N64_DebugPrint("[N64] InitSP done");
-    N64_InitVI();   N64_DebugPrint("[N64] InitVI done");
+    /* YELLOW = memsets done */
+    DIAG(0xFFC1);
 
-    /* STAGE 1 DIAGNOSTIC: GREEN = N64_InitVI() completed + all MI/PI/SP init passed.
-     * Must use KSEG1 (uncached) writes so VI reads the new colour from RDRAM.
-     * RGBA5551 bright green = 0x07C1: R=0, G=31, B=0, A=1 */
-    {
-        u16 *fb0 = (u16*)((uintptr_t)__fb0_start | 0x20000000u);
-        u16 *fb1 = (u16*)((uintptr_t)__fb1_start | 0x20000000u);
-        for (int i = 0; i < 320 * 240; i++) { fb0[i] = 0x07C1; fb1[i] = 0x07C1; }
-    }
-    N64_InitAI();   N64_DebugPrint("[N64] InitAI done");
-    N64_InitInput();N64_DebugPrint("[N64] InitInput done");
-    N64_InitFlashRAM(); N64_DebugPrint("[N64] InitFlashRAM done");
-    N64_EnableCPUInterrupts(); N64_DebugPrint("[N64] CPU interrupts enabled");
+    N64_InitMI();
+    /* CYAN = InitMI done */
+    DIAG(0x07FF);
 
-    /* STAGE 2 DIAGNOSTIC: WHITE = all init done, AgbMain about to start.
-     * RGBA5551 white = 0xFFFF. */
+    N64_InitPI();
+    /* MAGENTA = InitPI done */
+    DIAG(0xF83F);
+
+    N64_InitSP();
+    /* ORANGE = InitSP done */
+    DIAG(0xF1E1);
+
+    N64_InitVI();
+    /* GREEN = InitVI done */
+    DIAG(0x07C1);
     {
-        u16 *fb0 = (u16*)((uintptr_t)__fb0_start | 0x20000000u);
         u16 *fb1 = (u16*)((uintptr_t)__fb1_start | 0x20000000u);
-        for (int i = 0; i < 320 * 240; i++) { fb0[i] = 0xFFFF; fb1[i] = 0xFFFF; }
+        for (int i = 0; i < 320 * 240; i++) fb1[i] = 0x07C1;
     }
 
-    /* ------------------------------------------------------------------
-     * Seed the software TM1CNT_L register with the N64 CP0 Count register
-     * so that SeedRngAndSetTrainerId() in main.c gets a non-zero seed.
-     * CP0 Count increments at 46.875 MHz from CPU reset; by this point
-     * a few milliseconds have elapsed giving a non-deterministic value.
-     * ------------------------------------------------------------------ */
+    N64_InitAI();
+    N64_InitInput();
+    N64_InitFlashRAM();
+    N64_EnableCPUInterrupts();
+
+    /* WHITE = all init done, AgbMain about to start */
+    DIAG(0xFFFF);
+    {
+        u16 *fb1 = (u16*)((uintptr_t)__fb1_start | 0x20000000u);
+        for (int i = 0; i < 320 * 240; i++) fb1[i] = 0xFFFF;
+    }
+
     {
         u32 count;
         asm volatile ("mfc0 %0, $9" : "=r"(count));
@@ -250,11 +237,6 @@ void N64Main(void)
         *(u16 *)(gN64IoRegs + 0x104) = (u16)(count ^ (count >> 16));
     }
 
-    /* ------------------------------------------------------------------
-     * Hand off to the game's main function.
-     * AgbMain() contains the game loop and never returns.
-     * ------------------------------------------------------------------ */
-    N64_DebugPrint("[N64] calling AgbMain");
     AgbMain();
 
     /* Should never reach here */
