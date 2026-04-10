@@ -107,20 +107,23 @@ void N64_DispatchIntr(void)
     if ((cause & CAUSE_EXCCODE) != 0)
         return;  /* Not an interrupt — unexpected exception, ignore */
 
-    /* Read MI interrupt register */
+    /* Read MI interrupt register.
+     * Acknowledge each sub-interrupt BEFORE dispatching game callbacks so
+     * that re-entry cannot happen with a stale MI_INTR pending bit. */
     u32 miIntr = MI_INTR_RD();
+
+    /* Acknowledge all hardware interrupts immediately */
+    if (miIntr & MI_INTR_VI) N64_HW_WR(N64_VI_BASE_REG, VI_CURRENT_REG, 0);
+    if (miIntr & MI_INTR_SI) N64_HW_WR(N64_SI_BASE_REG, SI_STATUS_REG, 0);
+    if (miIntr & MI_INTR_PI) N64_HW_WR(N64_PI_BASE_REG, PI_STATUS_REG, 2);
+    if (miIntr & MI_INTR_SP) N64_HW_WR(N64_SP_BASE_REG, 0x10, 0x08);
+    if (miIntr & MI_INTR_DP) N64_HW_WR(N64_DP_BASE_REG, 0x0C, 0);
 
     /* ------------------------------------------------------------------
      * VI interrupt — VBlank / VCount / HBlank
+     * (Already acknowledged above via VI_CURRENT write)
      * ------------------------------------------------------------------ */
     if (miIntr & MI_INTR_VI) {
-        /* Acknowledge the VI interrupt by writing to VI_CURRENT (0x10).
-         * Writing VI_INTR (0x0C) only sets the trigger line — it does NOT
-         * clear the pending interrupt.  VI_CURRENT must be written to
-         * de-assert the MI_INTR_VI line, otherwise the CPU re-takes the
-         * exception immediately after ERET and the main loop never runs. */
-        N64_HW_WR(N64_VI_BASE_REG, VI_CURRENT_REG, 0);
-
         /* The VI interrupt fires at half-line 2 — once per frame.
          * Treat every VI interrupt as the GBA VBlank event.
          * gIntrTable layout (from main.c gIntrTableTemplate):

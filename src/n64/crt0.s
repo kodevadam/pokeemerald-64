@@ -380,6 +380,8 @@ __n64_general_exception_handler:
     mtlo    $k1
     addiu   $sp, $sp, 0x58
     mtc0    $k0, $14            /* restore EPC                             */
+    nop                         /* CP0 hazard: EPC write takes 1 cycle;    */
+                                /* eret must not immediately follow mtc0   */
     eret                        /* return from exception, re-enable intrs  */
     .size   __n64_general_exception_handler, . - __n64_general_exception_handler
 
