@@ -124,6 +124,23 @@ void N64_DispatchIntr(void)
      * (Already acknowledged above via VI_CURRENT write)
      * ------------------------------------------------------------------ */
     if (miIntr & MI_INTR_VI) {
+        /* DIAG heartbeat: write GREEN to top 4 rows of BOTH framebuffers
+         * immediately — before any other VI handler code can crash.
+         * Interpretation for the user:
+         *   Still RED only  → VI interrupt never fires (EnableCPUInterrupts broken)
+         *   GREEN stripe    → VI fires but rendering pipeline (VBlankIntr/BlitGBA) broken
+         *   Black / game    → rendering pipeline working                    */
+        {
+            extern u8 __fb0_start[];
+            extern u8 __fb1_start[];
+            volatile u16 *_f0 = (volatile u16 *)((uintptr_t)__fb0_start | 0x20000000u);
+            volatile u16 *_f1 = (volatile u16 *)((uintptr_t)__fb1_start | 0x20000000u);
+            for (int _i = 0; _i < 4 * 320; _i++) {
+                _f0[_i] = 0x07C1u;   /* GREEN RGBA5551 */
+                _f1[_i] = 0x07C1u;
+            }
+        }
+
         /* The VI interrupt fires at half-line 2 — once per frame.
          * Treat every VI interrupt as the GBA VBlank event.
          * gIntrTable layout (from main.c gIntrTableTemplate):

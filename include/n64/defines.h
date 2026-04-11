@@ -88,9 +88,9 @@ extern void *__n64_oam_buf;    /* points to __sw_oam_start   in RDRAM   */
  * M4A / sound info pointer — stored in a regular global on N64
  * (GBA stored it at a fixed IWRAM address 0x3007FF0)
  * --------------------------------------------------------------------- */
-extern struct SoundInfo *__n64_sound_info_ptr;
-extern u16               __n64_intr_check;
-extern void             *__n64_intr_vector;
+extern struct SoundInfo  *__n64_sound_info_ptr;
+extern volatile u16       __n64_intr_check;
+extern void              *__n64_intr_vector;
 
 #define SOUND_INFO_PTR (__n64_sound_info_ptr)
 #define INTR_CHECK     (__n64_intr_check)

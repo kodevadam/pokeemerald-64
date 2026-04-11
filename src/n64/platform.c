@@ -58,7 +58,7 @@ u8 gN64IoRegs[N64_IOREGS_SIZE];
 
 /* GBA defines.h global variable stubs */
 struct SoundInfo *__n64_sound_info_ptr = NULL;
-u16               __n64_intr_check     = 0;
+volatile u16      __n64_intr_check     = 0;
 void             *__n64_intr_vector    = NULL;
 
 /* -----------------------------------------------------------------------
@@ -180,7 +180,7 @@ void N64Main(void)
      *   GREEN   0x07C1  InitVI done
      *   BLUE    0x003F  InitAI done
      *   CYAN    0x07FF  InitInput done
-     *   RED     0xF801  about to enable interrupts (IE still 0)
+     *   TEAL    0x07E1  about to enable interrupts (IE still 0)
      *   YELLOW  0xFFC1  interrupts enabled + first handler returned
      *   (game starts after YELLOW)
      */
@@ -261,8 +261,10 @@ void N64Main(void)
 
     N64_InitFlashRAM();  /* no-op: sFlashRAMPresent = 0 */
 
-    /* RED = about to enable interrupts (VI/SI are unmasked but IE still 0) */
-    DIAG(0xF801);
+    /* TEAL = about to enable interrupts (VI/SI are unmasked but IE still 0)
+     * Changed from RED (0xF801) so it's distinct from first RED after MI_INTR_MASK.
+     * TEAL = 0x07E1 = R:0 G:31 B:16 A:1 in RGBA5551                       */
+    DIAG(0x07E1u);
 
     N64_EnableCPUInterrupts();
     /* YELLOW = interrupts enabled + first handler returned cleanly */
