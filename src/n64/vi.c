@@ -140,18 +140,26 @@ void N64_VISetVCountLine(u16 line)
  *
  * Centres the GBA picture with black letterbox/pillarbox borders.
  * --------------------------------------------------------------------- */
+/* Fill helper: write opaque black (RGBA5551 = 0x0001) to n pixels.
+ * memset fills bytes; 0x0001 is not a repeated byte pattern, so we loop. */
+static void fill_opaque_black(u16 *dst, int n)
+{
+    for (int i = 0; i < n; i++)
+        dst[i] = 0x0001u;
+}
+
 void N64_BlitGBAFrame(void)
 {
     const u16 *src = gN64GBAFramebuffer;
     u16       *dst = gN64BackBuffer;
 
-    /* Top border */
-    memset(dst, 0, N64_FB_Y_OFFSET * N64_VI_WIDTH * sizeof(u16));
+    /* Top border — opaque black */
+    fill_opaque_black(dst, N64_FB_Y_OFFSET * N64_VI_WIDTH);
     dst += N64_FB_Y_OFFSET * N64_VI_WIDTH;
 
     for (int y = 0; y < DISPLAY_HEIGHT; y++) {
         /* Left border */
-        memset(dst, 0, N64_FB_X_OFFSET * sizeof(u16));
+        fill_opaque_black(dst, N64_FB_X_OFFSET);
         dst += N64_FB_X_OFFSET;
 
         /* GBA scanline */
@@ -160,10 +168,10 @@ void N64_BlitGBAFrame(void)
         src += DISPLAY_WIDTH;
 
         /* Right border */
-        memset(dst, 0, N64_FB_X_OFFSET * sizeof(u16));
+        fill_opaque_black(dst, N64_FB_X_OFFSET);
         dst += N64_FB_X_OFFSET;
     }
 
-    /* Bottom border */
-    memset(dst, 0, N64_FB_Y_OFFSET * N64_VI_WIDTH * sizeof(u16));
+    /* Bottom border — opaque black */
+    fill_opaque_black(dst, N64_FB_Y_OFFSET * N64_VI_WIDTH);
 }
