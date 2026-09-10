@@ -204,8 +204,19 @@ void LZ77UnCompVram(const void *src, void *dst)
 {
     /* On GBA, VRam writes are 16-bit only.  We decompress to a temp buffer
      * then copy 16-bit words.  The decompressed size is always even for
-     * VRAM data.  On N64, VRAM is RDRAM, so we can write bytes directly. */
-    lz77_decomp((const u8 *)src, (u8 *)dst);
+     * VRAM data.  On N64, VRAM is RDRAM, so we can write bytes directly.
+     *
+     * Written through the uncached KSEG1 alias, like every other piece of
+     * "hardware-visible" memory in this port (the VI framebuffer, the PIF
+     * command buffers): the software compositor treats VRAM as real GBA
+     * VRAM and re-reads it every frame, so a cached write here can leave
+     * a stale line visible to whatever reads it back (compositor, or a
+     * subsequent decompression aliasing the same cache lines) until the
+     * line is naturally evicted -- observed to cause the CPU to lock up
+     * partway through title-screen asset loading once VRAM is being
+     * written and re-read heavily within the same frame. */
+    u8 *uncachedDst = (u8 *)((uintptr_t)dst | 0x20000000u);
+    lz77_decomp((const u8 *)src, uncachedDst);
 }
 
 /* -----------------------------------------------------------------------

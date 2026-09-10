@@ -334,6 +334,7 @@ typedef struct {
     const void *src;
     void       *dst;
     u32         control;
+    u32         fixedValue;  /* captured at queue time for DMA_SRC_FIXED (fill) requests */
 } Dma3Request;
 
 static Dma3Request sDma3Queue[DMA3_QUEUE_SIZE];
@@ -349,12 +350,28 @@ void N64_DmaSet(int dmaNum, const void *src, void *dst, u32 control)
     u32 bytes  = count * (is32 ? 4 : 2);
 
     if (dmaNum == 3) {
-        /* Queue for VBlank processing */
+        /* Queue for VBlank processing.
+         *
+         * DmaFill16/32 (the DMA_SRC_FIXED case) pass a pointer to a
+         * stack-local temporary that only exists for the lifetime of the
+         * macro's do{}while(0) block -- it goes out of scope the instant
+         * this call returns, long before ProcessDma3Requests() runs it
+         * at the next VBlank.  Storing that pointer for later use is a
+         * dangling-pointer bug: by VBlank time the stack slot has been
+         * reused by whatever ran since (often all three of a case's
+         * DmaFill calls alias the same slot), so the "fill value" read
+         * back is whatever garbage happens to be on the stack rather
+         * than the value the caller asked for -- which was filling all
+         * of VRAM/OAM/PLTT with noise instead of zero, the root cause of
+         * the long-standing screen-corruption/freeze bug.  Capture the
+         * value now, while src is still live, instead of the pointer. */
         int next = (sDma3Head + 1) % DMA3_QUEUE_SIZE;
         if (next != sDma3Tail) {
             sDma3Queue[sDma3Head].src     = src;
             sDma3Queue[sDma3Head].dst     = dst;
             sDma3Queue[sDma3Head].control = control;
+            if (fixed)
+                sDma3Queue[sDma3Head].fixedValue = is32 ? *(const u32 *)src : *(const u16 *)src;
             sDma3Head = next;
         }
         return;
@@ -394,11 +411,11 @@ void ProcessDma3Requests(void)
         if (ctrl & DMA_ENABLE) {
             if (fixed) {
                 if (is32) {
-                    u32 val = *(const u32 *)req->src;
+                    u32 val = req->fixedValue;
                     u32 *d = (u32 *)req->dst;
                     for (u32 i = 0; i < count; i++) *d++ = val;
                 } else {
-                    u16 val = *(const u16 *)req->src;
+                    u16 val = (u16)req->fixedValue;
                     u16 *d = (u16 *)req->dst;
                     for (u32 i = 0; i < count; i++) *d++ = val;
                 }
