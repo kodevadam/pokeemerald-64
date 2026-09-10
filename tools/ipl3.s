@@ -1,5 +1,25 @@
 /*
- * tools/ipl3.s — N64 IPL3 boot stub (CPU-copy, libdragon-compatible VMA layout)
+ * tools/ipl3.s — N64 IPL3 boot stub (CPU-copy)
+ *
+ * !! FALLBACK ONLY — prefer tools/ipl3_libdragon.bin !!
+ *
+ * This stub does NOT initialize RDRAM, which real IPL3 is required to do
+ * (assign per-chip device IDs, enable the chips, run current-control
+ * calibration).  Real hardware happens to tolerate the omission, but an
+ * accurate emulator will not: in ares every RDRAM access is routed through
+ * RDRAM::Writable::translate() until the chips are enabled, so all writes are
+ * silently dropped and all reads return 0.  The copy below therefore lands
+ * nowhere, the jump at the end reaches zeroed memory, and the CPU spins in
+ * NOPs forever — a permanently black screen with no other diagnostic.
+ *
+ * The build only falls back to assembling this file when
+ * tools/ipl3_libdragon.bin is absent (see Makefile.n64).  libdragon's IPL3
+ * does full RDRAM init and is BSD-licensed, so there is no reason to use this.
+ *
+ * NOTE: the addresses below match the OLD layout (.boot at 0x807FC000, LMA
+ * ROM[0x1048]).  n64.ld and src/n64/rom_header.s now place .boot at
+ * 0x80400000 with LMA ROM[0x1000] for libdragon's compat IPL3, so this stub
+ * would need updating to match before it could work again.
  *
  * The N64 PIF ROM copies bytes 0x040–0x0FFF of the cart ROM into
  * RSP IMEM (or RDRAM 0xA0000040 on some revisions) and executes it.

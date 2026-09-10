@@ -137,6 +137,37 @@ extern void N64_InitFlashRAM(void); /* flashram.c */
 /* -----------------------------------------------------------------------
  * N64Main — platform entry point (called from crt0.s)
  * --------------------------------------------------------------------- */
+/* -----------------------------------------------------------------------
+ * N64_PifTerminateBoot — tell the PIF that the boot process has finished.
+ *
+ * The PIF halts the CPU roughly 5 seconds after reset unless bit 3 of
+ * PIF-RAM byte 0x3F is set.  Nintendo's IPL3 does not send this — it is left
+ * to the game (libultra's boot code does it) — and libdragon only sends it
+ * from its full ELF loader (boot/loader.c stage3), NOT from the flat-binary
+ * compat loader we boot with (boot/loader_compat.c stage3).  So it is on us.
+ *
+ * Symptom when missing: the console runs normally for ~5 seconds and then
+ * freezes on whatever was last drawn, with no other diagnostic.  ares reports
+ * it as "[PIF::main] boot timeout: CPU has not sent the boot termination
+ * command within 5 seconds. Halting the CPU".
+ *
+ * Must therefore be the first thing we do, before the (slow) screen fills.
+ * --------------------------------------------------------------------- */
+#define SI_STATUS_DMA_BUSY 0x0001u
+#define SI_STATUS_IO_BUSY  0x0002u
+
+static void N64_PifTerminateBoot(void)
+{
+    /* Wait for the SI to go idle before touching PIF-RAM. */
+    while (N64_HW_RD(N64_SI_BASE_REG, SI_STATUS_REG)
+           & (SI_STATUS_DMA_BUSY | SI_STATUS_IO_BUSY))
+        ;
+
+    /* PIF-RAM is 64 bytes at 0xBFC007C0; byte 0x3F is the command byte, so
+     * the containing word is at 0xBFC007FC.  Bit 3 = "boot terminated". */
+    *(volatile u32 *)0xBFC007FCu = 0x08u;
+}
+
 /* Minimal VI init + screen fill used for staged boot diagnostics */
 static void DiagFillScreen(u16 colour)
 {
@@ -188,6 +219,10 @@ void N64Main(void)
     volatile u16 *__fb = (volatile u16*)((uintptr_t)__fb0_start | 0x20000000u); \
     for (int __i = 0; __i < 320*240; __i++) __fb[__i] = (c); \
 } while(0)
+
+    /* Stop the PIF from halting us ~5 s from now.  Must come before the
+     * screen fills below, which are slow (76800 uncached writes each). */
+    N64_PifTerminateBoot();
 
     /* BLUE = N64Main reached */
     DiagFillScreen(0x003F);

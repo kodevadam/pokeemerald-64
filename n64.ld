@@ -23,8 +23,9 @@ ENTRY(__n64_boot)
 MEMORY
 {
     /* RDRAM — 4MB base + 4MB expansion pak = 8MB total.
-     * Expansion pak REQUIRED: .boot VMA = 0x807FC000 (top of 8MB RDRAM).
-     * .text / .data are DMA'd to 0x80000400+ by crt0.s at boot.
+     * Expansion pak REQUIRED (the game's buffers live at 0x80790000+).
+     * .boot VMA = 0x80400000, loaded there by libdragon's compat IPL3.
+     * .text / .data are copied to 0x80000400+ by crt0.s at boot.
      * Low 1KB (0x80000000-0x800003FF) is used for exception vectors.        */
     RDRAM  (rwx) : ORIGIN = 0x80000400, LENGTH = 8M - 0x400
 
@@ -62,19 +63,25 @@ SECTIONS
     } > ROM
 
     /* ------------------------------------------------------------------ */
-    /*  Boot / entry stub — loaded by libdragon IPL3 to top of RDRAM.    */
+    /*  Boot / entry stub — loaded by libdragon's compat IPL3.            */
     /*                                                                     */
-    /*  The libdragon IPL3 reads ROM[0x1040] (= 0x4000, 16 KB), DMA's    */
-    /*  ROM[0x1048..0x5048] → RDRAM[RDRAM_SIZE-0x4000..RDRAM_SIZE-1],    */
-    /*  then jumps to 0x80000000 + RDRAM_SIZE - 0x4000.                  */
+    /*  IPL3 (boot/loader_compat.c) reads the entry point from ROM[0x08],  */
+    /*  DMA's ROM[0x1000..] to that address, and jumps to it.  So this     */
+    /*  VMA must equal the entry point in src/n64/rom_header.s, and this   */
+    /*  must be the first section after the 0x1000-byte .n64header so its  */
+    /*  LMA lands exactly at ROM[0x1000].                                  */
     /*                                                                     */
-    /*  8 MB RDRAM (expansion pak required):                              */
-    /*    RDRAM_SIZE = 0x800000 → .boot lands at 0x807FC000               */
+    /*  Placement constraints (see rom_header.s for the full reasoning):   */
+    /*    - NOT in the top 32 KiB (0x807F8000+): libdragon reserves that   */
+    /*      for its loader/stack and clears it before jumping.             */
+    /*    - IPL3 falls back to DMA'ing 1 MiB, so 0x80400000..0x80500000    */
+    /*      must be free — it is: above __bss_end (0x80332030) and below   */
+    /*      __sw_palette_start (0x80790000).                               */
     /*                                                                     */
-    /*  crt0.s (__n64_boot) runs from 0x807FC000, PI-DMA's .text to      */
+    /*  crt0.s (__n64_boot) runs from 0x80400000, copies .text to         */
     /*  0x80000400 and .data to its RDRAM VMA, then calls N64Main().      */
     /* ------------------------------------------------------------------ */
-    .boot 0x807FC000 :
+    .boot 0x80400000 :
     {
         KEEP(*(.boot))
         KEEP(*(.boot.*))

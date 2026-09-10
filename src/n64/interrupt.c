@@ -112,9 +112,22 @@ void N64_DispatchIntr(void)
      * that re-entry cannot happen with a stale MI_INTR pending bit. */
     u32 miIntr = MI_INTR_RD();
 
-    /* Acknowledge all hardware interrupts immediately */
+    /* Acknowledge all hardware interrupts immediately.
+     *
+     * Every interrupt we unmask in MI MUST be acknowledged here.  The MI
+     * interrupt line is level-triggered through CP0 Cause.IP2, so any source
+     * left asserted re-enters this handler the instant ERET executes.  That
+     * starves the main thread completely: the game never advances a single
+     * instruction and the screen freezes on whatever was last drawn, with no
+     * crash and no other symptom.
+     *
+     * AI in particular asserts as soon as the audio DMA runs dry, which
+     * happens immediately after N64_InitAI() since nothing is queued yet.
+     * Writing AI_STATUS is what clears it — N64_AudioRefill() below only
+     * refills the buffer and does not touch the interrupt.  */
     if (miIntr & MI_INTR_VI) N64_HW_WR(N64_VI_BASE_REG, VI_CURRENT_REG, 0);
     if (miIntr & MI_INTR_SI) N64_HW_WR(N64_SI_BASE_REG, SI_STATUS_REG, 0);
+    if (miIntr & MI_INTR_AI) N64_HW_WR(N64_AI_BASE_REG, AI_STATUS_REG, 0);
     if (miIntr & MI_INTR_PI) N64_HW_WR(N64_PI_BASE_REG, PI_STATUS_REG, 2);
     if (miIntr & MI_INTR_SP) N64_HW_WR(N64_SP_BASE_REG, 0x10, 0x08);
     if (miIntr & MI_INTR_DP) N64_HW_WR(N64_DP_BASE_REG, 0x0C, 0);

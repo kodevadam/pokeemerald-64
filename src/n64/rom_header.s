@@ -40,8 +40,10 @@
     /* Clock rate (0 = default) — must be 0x00000000 for libdragon IPL3 */
     .byte   0x00, 0x00, 0x00, 0x00
 
-    /* Entry point in RDRAM (KSEG0 0x80000400) — big-endian for IPL3 */
-    .byte   0x80, 0x00, 0x04, 0x00
+    /* Entry point / load address in RDRAM (KSEG0 0x80400000) — big-endian.
+     * libdragon's compat IPL3 reads this single field for BOTH the DMA
+     * destination and the jump target, so .boot's VMA in n64.ld must match. */
+    .byte   0x80, 0x40, 0x00, 0x00
 
     /* Release / OS version */
     .byte   0x00, 0x00, 0x00, 0x00
@@ -77,24 +79,29 @@
     /* ROM version */
     .byte   0x00
 
-    /* IPL3 boot code region — 4032 bytes, must be filled externally */
-    /* Leave as zeros; inject IPL3 before building final ROM */
-    .space  0x1000 - 0x40
-
-    /* Boot header at ROM[0x1000..0x1047] — read by libdragon IPL3.
+    /* IPL3 boot code region — 4032 bytes, filled by tools/patch_ipl3.py.
+     * Leave as zeros here; the build injects libdragon's IPL3 after linking.
      *
-     * The libdragon IPL3 protocol:
-     *   ROM[0x1040] = boot_size  (bytes to DMA from ROM[0x1048..])
-     *   IPL3 DMA's ROM[0x1048..0x1048+boot_size-1] →
-     *               RDRAM[RDRAM_SIZE-boot_size .. RDRAM_SIZE-1]
-     *   IPL3 jumps to 0x80000000 + RDRAM_SIZE - boot_size
+     * This .space ends the header at exactly 0x1000 bytes, so the .boot
+     * section's LMA is ROM[0x1000] — which is where IPL3 starts reading.
      *
-     * We set boot_size = 0x4000 (16 KB).
-     * On 8 MB RDRAM (expansion pak): IPL3 puts .boot at 0x807FC000.
-     * n64.ld sets .boot VMA = 0x807FC000 to match.
-     * crt0.s then PI-DMA's .text/.data from ROM to their RDRAM VMAs.
+     * The actual libdragon compat IPL3 protocol (boot/loader_compat.c):
+     *   entrypoint = ROM[0x08]          (header entry point field, above)
+     *   size       = ROM[0x10]          (the CRC1 field)
+     *   if size == 0 or size is too large to fit below the reserved area
+     *       at the top of RDRAM, size defaults to 1 MiB
+     *   DMA ROM[0x1000 .. 0x1000+size] -> entrypoint, then jump to entrypoint
+     *
+     * Because ROM[0x10] holds CRC1 (patched by tools/n64crc), the size check
+     * fails and IPL3 falls back to DMA'ing 1 MiB.  So the 1 MiB window at
+     * the entry point must be free: 0x80400000..0x80500000 sits above
+     * __bss_end (0x80332030) and below __sw_palette_start (0x80790000), and
+     * crt0's stack grows down from 0x803A0000 (away from it).
+     *
+     * .boot must NOT be placed in the top 32 KiB of RDRAM
+     * (0x807F8000..0x80800000): libdragon reserves that for its own loader
+     * and first-stage stack (LOADER_SIZE 28K + STACK1_SIZE 4K) and clears it
+     * before jumping to the entry point.
      */
-    .space  0x40                    /* ROM[0x1000..0x103F] — reserved         */
-    .word   0x00004000              /* ROM[0x1040..0x1043] — boot size = 16KB */
-    .space  4                       /* ROM[0x1044..0x1047] — reserved         */
-    /* .boot section (crt0.s) follows immediately at ROM[0x1048]              */
+    .space  0x1000 - 0x40
+    /* .boot section (crt0.s) follows immediately at ROM[0x1000]              */
