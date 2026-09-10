@@ -17,6 +17,45 @@
 #include "n64/macro.h"
 #include "n64/syscall.h"
 
+/* -----------------------------------------------------------------------
+ * Block the real GBA headers that the five includes above replace.
+ *
+ * Every file in the game includes global.h, which includes THIS file
+ * (n64/n64.h) FIRST and then unconditionally includes gba/gba.h afterward
+ * (mirroring the original GBA build, so game source needs no changes).
+ * gba/gba.h in turn includes gba/defines.h, gba/io_reg.h, gba/types.h,
+ * gba/macro.h and gba/syscall.h.
+ *
+ * None of those five files are guarded out above (unlike multiboot.h and
+ * isagbprint.h below), so without this block they get fully processed a
+ * second time and their plain #defines -- PLTT, VRAM, OAM, INTR_CHECK,
+ * SOUND_INFO_PTR, every REG_OFFSET_ and REG_ADDR_ constant, IWRAM_DATA, etc.
+ * -- silently redefine (last one wins) the N64 versions this file just set
+ * up, with real GBA hardware addresses (example: PLTT = 0x05000000).
+ * Nearly every source file in the game references at least one of these,
+ * so this corrupted essentially all rendering/sound/interrupt state: any
+ * write through the clobbered macros lands on an unmapped KUSEG address
+ * with no TLB entry, which raises a TLB Refill exception; the handler for
+ * that in src/n64/crt0.s just spins forever, stalling the CPU with the
+ * framebuffer permanently frozen and no crash or diagnostic.  -Wall does
+ * warn PLTT redefined etc for every clobbered macro, but the warnings are
+ * silent by default and easy to miss among the rest of the build output. */
+#ifndef GUARD_GBA_DEFINES_H
+#define GUARD_GBA_DEFINES_H
+#endif
+#ifndef GUARD_GBA_IO_REG_H
+#define GUARD_GBA_IO_REG_H
+#endif
+#ifndef GUARD_GBA_TYPES_H
+#define GUARD_GBA_TYPES_H
+#endif
+#ifndef GUARD_GBA_MACRO_H
+#define GUARD_GBA_MACRO_H
+#endif
+#ifndef GUARD_GBA_SYSCALL_H
+#define GUARD_GBA_SYSCALL_H
+#endif
+
 /* Compatibility stubs for GBA-specific headers that are not needed on N64 */
 
 /* gba/multiboot.h — full struct with all fields for source compatibility */
