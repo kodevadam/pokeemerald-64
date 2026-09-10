@@ -210,7 +210,7 @@ $(GFX_STAMP): $(GFX) Makefile.n64 $(filter %.c, $(ALL_SRCS))
 	@# that lack the INCBIN_ keyword, so a line-level filter misses them.
 	@MISSING=$$(grep -rh '"graphics/\|"data/' src/ 2>/dev/null | \
 	    grep -oP '(?<=")(graphics|data)/[^"]+(?=")' | \
-	    grep -E '\.(4bpp|8bpp|gbapal|lz|rl|1bpp|bin)' | \
+	    grep -E '\.(4bpp|8bpp|gbapal|lz|rl|1bpp|bin|latfont|hwjpnfont|fwjpnfont)' | \
 	    sort -u | \
 	    while IFS= read -r f; do [ -f "$$f" ] || echo "$$f"; done); \
 	if [ -n "$$MISSING" ]; then \
@@ -268,10 +268,17 @@ $(BUILD_DIR)/%.o: %.s
 # Assemble data/*.s — GBA game data (scripts, text, battle animations, sound)
 # Pipeline: preproc (charmap) → host CPP (expand #includes, -e converts enums→.equiv) → preproc -ie → as
 # Note: $(AS) is the bare assembler; use only assembler-compatible flags (not GCC-only flags).
+# set -o pipefail: without it a failure in any stage but the last is discarded and
+#   $(AS) happily assembles the truncated/empty stream into a valid-but-empty .o.
+#   make then treats that object as up to date, and the link fails much later with
+#   thousands of undefined references (or worse, silently drops game data).
+# | $(GFX_STAMP): order-only — these sources .incbin generated graphics/data files,
+#   so asset generation must finish before the assembler runs.  Without this the
+#   rule races against the gfx step under -j and produces empty objects.
 AS_ARCH_FLAGS := -mips3 -mabi=32 -EB -G0
-$(BUILD_DIR)/data/%.o: data/%.s
+$(BUILD_DIR)/data/%.o: data/%.s | $(GFX_STAMP)
 	@mkdir -p $(dir $@)
-	$(PREPROC) $< charmap.txt | gcc $(CPP_DATA_FLAGS) - | $(PREPROC) -ie $< charmap.txt | $(AS) $(AS_ARCH_FLAGS) -o $@
+	set -o pipefail; $(PREPROC) $< charmap.txt | gcc $(CPP_DATA_FLAGS) - | $(PREPROC) -ie $< charmap.txt | $(AS) $(AS_ARCH_FLAGS) -o $@
 
 # ---------- Data file generation rules ----------------------------
 # Generate 4bpp/8bpp/pal binary data from source files using gbagfx.
