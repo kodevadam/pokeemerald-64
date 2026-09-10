@@ -54,7 +54,6 @@
  * Analog stick: bytes 2 (X, -128..127) and 3 (Y, -128..127)
  */
 
-#include <string.h>
 #include "global.h"
 #include "n64/asm_defs.h"
 
@@ -66,15 +65,24 @@ void N64_InputStartRead(void);
  * --------------------------------------------------------------------- */
 #define SI_REG_WR(off, val) N64_HW_WR(N64_SI_BASE_REG, (off), (val))
 #define SI_REG_RD(off)      N64_HW_RD(N64_SI_BASE_REG, (off))
-#define N64_PIF_RAM  ((volatile u8 *)0xBFC007C0)   /* PIF-RAM (64 bytes) */
+#define PIF_RAM_PHYS_ADDR   0x1FC007C0u   /* PIF-RAM physical address (64 bytes) */
 
 /* -----------------------------------------------------------------------
- * PIF command buffer — 64 bytes
- * Layout: controller command (4 bytes) + padding, terminated by 0xFE.
- * The SI copies this to PIF-RAM and executes the commands.
+ * PIF command / response buffers — 64 bytes each, DMA'd between RDRAM and
+ * PIF-RAM by the SI.  Real N64 hardware/libultra protocol requires the
+ * command block to reach PIF-RAM via an SI *write* DMA (RDRAM -> PIF-RAM)
+ * before an SI *read* DMA (PIF-RAM -> RDRAM) can retrieve a valid
+ * response: the write DMA is what triggers the PIF to parse the command
+ * block (joyInit/joyParse in HLE terms) and populate per-channel state;
+ * the read DMA runs the actual controller command (joyRun) using that
+ * state.  A CPU store straight into PIF-RAM (bypassing the write DMA)
+ * skips that parse step entirely, so the read DMA operates on stale/
+ * uninitialized channel state and never reflects real button presses.
  *
- * sPifRsp is accessed via an uncached KSEG1 alias to avoid stale cache
- * entries after the SI DMA writes new button data to RDRAM.            */
+ * Both buffers are accessed via the uncached KSEG1 alias so that CPU
+ * writes/reads are immediately visible to/from the DMA engine without
+ * needing an explicit cache writeback (same convention used for the VI
+ * framebuffer in platform.c).                                          */
 static u8 sPifCmd[64] __attribute__((aligned(64)));
 static u8 sPifRsp[64] __attribute__((aligned(64)));
 /* KSEG1 (uncached) alias: physical = virt & 0x1FFFFFFF, KSEG1 = | 0xA0000000 */
@@ -84,7 +92,11 @@ static u8 sPifRsp[64] __attribute__((aligned(64)));
 static volatile u16 sN64Buttons = 0;
 static volatile s8  sAnalogX    = 0;
 static volatile s8  sAnalogY    = 0;
-static volatile int sReadPending = 0;
+
+/* SI transaction state machine — one controller poll spans two SI
+ * interrupts (write DMA completion, then read DMA completion).        */
+enum { SI_IDLE = 0, SI_WRITE_PENDING, SI_READ_PENDING };
+static volatile int sSiState = SI_IDLE;
 
 /* Analog stick dead zone (out of 127) */
 #define ANALOG_THRESHOLD 32
@@ -97,7 +109,7 @@ void N64_InitInput(void)
     sN64Buttons = 0;
     sAnalogX    = 0;
     sAnalogY    = 0;
-    sReadPending = 0;
+    sSiState    = SI_IDLE;
 
     /* Build the PIF command for a standard controller read on port 0:
      *   Byte 0: 0x01 — send 1 byte
@@ -118,65 +130,69 @@ void N64_InitInput(void)
      *    ↑    ↑    ↑    ↑↑↑↑          ↑
      *    ch0  rcv4 cmd  response buf  end of cmds
      */
-    memset(sPifCmd, 0, sizeof(sPifCmd));
-    sPifCmd[0]  = 0x01;  /* send count: 1 byte    */
-    sPifCmd[1]  = 0x04;  /* recv count: 4 bytes   */
-    sPifCmd[2]  = 0x01;  /* command: GetKeysAsync */
+    /* Written through the uncached alias so the bytes land in RDRAM
+     * immediately -- the SI write DMA reads directly from physical
+     * memory and would otherwise see whatever stale garbage was there
+     * before this (cached) buffer's writes get evicted.               */
+    volatile u8 *cmd = UNCACHED(sPifCmd);
+    for (int i = 0; i < 64; i++)
+        cmd[i] = 0;
+    cmd[0]  = 0x01;  /* send count: 1 byte    */
+    cmd[1]  = 0x04;  /* recv count: 4 bytes   */
+    cmd[2]  = 0x01;  /* command: GetKeysAsync */
     /* bytes 3-6 will be filled by PIF with response */
-    sPifCmd[7]  = 0xFE;  /* end-of-commands marker */
-    sPifCmd[63] = 0x01;  /* PIF control: read mode */
+    cmd[7]  = 0xFE;  /* end-of-commands marker */
+    /* PIF control byte (offset 0x3F): bit 0 set tells the PIF to parse
+     * this command block (joyInit+joyParse) when it arrives via an SI
+     * write DMA -- this is the step our old direct-CPU-write approach
+     * skipped entirely. */
+    cmd[63] = 0x01;
 
     N64_InputStartRead();
 }
 
 /* -----------------------------------------------------------------------
- * N64_InputStartRead — initiate an SI DMA read from PIF-RAM
+ * N64_InputStartRead — initiate a controller poll
+ *
+ * Kicks off the *write* half of the SI transaction: DMA sPifCmd from
+ * RDRAM into PIF-RAM.  This is what makes the PIF parse the command
+ * block; the read half (started from N64_ControllerReadDone() once the
+ * write DMA's SI interrupt arrives) then executes it.
  * --------------------------------------------------------------------- */
-
-/* Byte-safe copy for PIF-RAM (big-endian peripheral).
- * The CPU is little-endian (-EL); unaligned or word-level writes to
- * 0xBFC007C0 would byte-swap within words.  Use byte-by-byte volatile
- * writes to ensure the bytes land in the correct order.               */
-static inline void pif_write(const u8 *src, int len)
-{
-    volatile u8 *pif = N64_PIF_RAM;
-    for (int i = 0; i < len; i++)
-        pif[i] = src[i];
-}
-
-static inline void pif_read(u8 *dst, int len)
-{
-    volatile const u8 *pif = N64_PIF_RAM;
-    for (int i = 0; i < len; i++)
-        dst[i] = pif[i];
-}
-
 void N64_InputStartRead(void)
 {
-    if (sReadPending)
+    if (sSiState != SI_IDLE)
         return;
 
-    /* Write command block to PIF-RAM byte-by-byte */
-    pif_write(sPifCmd, 64);
+    /* Physical RDRAM address = KSEG0 virtual & 0x1FFFFFFF. */
+    SI_REG_WR(SI_DRAM_ADDR_REG,  (u32)((uintptr_t)sPifCmd & 0x1FFFFFFF));
+    SI_REG_WR(SI_PIF_ADDR_WR64B, PIF_RAM_PHYS_ADDR);
 
-    /* Start SI DMA: PIF-RAM → sPifRsp (in RDRAM).
-     * Physical RDRAM address = KSEG0 virtual & 0x1FFFFFFF.             */
-    SI_REG_WR(SI_DRAM_ADDR_REG,  (u32)((uintptr_t)sPifRsp & 0x1FFFFFFF));
-    SI_REG_WR(SI_PIF_ADDR_RD64B, 0x1FC007C0); /* PIF-RAM physical address */
-
-    sReadPending = 1;
+    sSiState = SI_WRITE_PENDING;
 }
 
 /* -----------------------------------------------------------------------
- * N64_ControllerReadDone — called from interrupt.c on SI interrupt
+ * N64_ControllerReadDone — called from interrupt.c on every SI interrupt
  *
- * Parses the 4-byte response from PIF-RAM and updates REG_KEYINPUT.
+ * One controller poll spans two SI interrupts:
+ *   1. Write DMA (sPifCmd -> PIF-RAM) completes -> PIF has now parsed the
+ *      command block.  Immediately follow up with the read DMA
+ *      (PIF-RAM -> sPifRsp) that actually executes it.
+ *   2. Read DMA completes -> sPifRsp holds the real response; parse it
+ *      and update REG_KEYINPUT.
  * --------------------------------------------------------------------- */
 void N64_ControllerReadDone(void)
 {
-    if (!sReadPending)
+    if (sSiState == SI_WRITE_PENDING) {
+        SI_REG_WR(SI_DRAM_ADDR_REG,  (u32)((uintptr_t)sPifRsp & 0x1FFFFFFF));
+        SI_REG_WR(SI_PIF_ADDR_RD64B, PIF_RAM_PHYS_ADDR);
+        sSiState = SI_READ_PENDING;
         return;
-    sReadPending = 0;
+    }
+
+    if (sSiState != SI_READ_PENDING)
+        return;
+    sSiState = SI_IDLE;
 
     /* Response layout (from PIF GetKeys command):
      *   sPifRsp[3] = buttons high byte
