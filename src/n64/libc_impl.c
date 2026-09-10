@@ -330,16 +330,229 @@ float sqrtf(float x)
     return r;
 }
 
-double sin(double x)  { return __builtin_sin(x); }
-double cos(double x)  { return __builtin_cos(x); }
-float  sinf(float x)  { return (float)__builtin_sin((double)x); }
-float  cosf(float x)  { return (float)__builtin_cos((double)x); }
+/* -----------------------------------------------------------------------
+ * sin / cos
+ *
+ * BUG THIS REPLACES: `double sin(double x) { return __builtin_sin(x); }`.
+ * GCC has no software fallback for __builtin_sin/__builtin_cos on a
+ * double in a freestanding build (no libm) -- it just lowers the builtin
+ * to a call to the C library function named "sin"/"cos".  Since THIS
+ * function IS named sin(), that is a call to itself: a tail call with no
+ * base case, which -O2 turns into a literal `j <self>` instruction --
+ * an infinite loop baked directly into the binary, no recursion/stack
+ * overflow, no crash, nothing but a permanently spinning CPU the instant
+ * anything calls sin() or cos() (ObjAffineSet, used for sprite rotation/
+ * scale, is the first caller reached in the intro sequence).  sinf/cosf
+ * inherit the same bug since they just call through to __builtin_sin on
+ * a widened double, i.e. through this same broken path.
+ *
+ * Real implementation: reduce x to [-pi, pi], then Taylor series.  Inputs
+ * in this codebase come from GBA-style angle-as-s16 conversions
+ * (angle = rotation/32768 * pi) so they already land in roughly that
+ * range before this ever runs; the reduction below just makes the
+ * function correct for arbitrary inputs too.
+ * --------------------------------------------------------------------- */
+/* NOT plain double literals: GCC pools an arbitrary (non-trivially-integer)
+ * double constant like 3.14159... in .rodata and loads it with `ldc1`, a
+ * 64-bit load.  .rodata lives in ROM (KSEG1 cart space) on this port, and
+ * real N64 PI-bus hardware cannot do a 64-bit transaction in one go --
+ * ares enforces this accurately and freezes the CPU the instant it sees a
+ * 64-bit read land outside RDRAM ("[Bus::freezeDualRead] CPU frozen
+ * because of 64-bit read from non-RDRAM area"), which is exactly what
+ * cosf's `x + N64_HALF_PI` did the moment anything called it.
+ *
+ * Two things that do NOT avoid this, both tried and confirmed still
+ * producing an ldc1 from ROM in the built ELF:
+ *   - (double)355/(double)113: 355 and 113 are compile-time constants, so
+ *     -O2 constant-folds the whole division into the same kind of double
+ *     literal at compile time and pools THAT instead.
+ *   - a union type-pun of two uint32_t halves into a double, computed
+ *     inline: GCC's constant folder evaluates the union access at compile
+ *     time too when every input is a literal, right back to a poolable
+ *     double constant.
+ *
+ * What actually works: a genuinely mutable (non-const) global.  The
+ * compiler can never assume it knows a non-const global's value at
+ * compile time -- another translation unit could have written to it --
+ * so a read can never be folded into a literal, and non-const data goes
+ * into .data/.bss (RDRAM) rather than .rodata (ROM) in the first place.
+ * Computed once, lazily, from the same raw-bits union (now unfoldable
+ * since it feeds a variable the optimizer must treat as opaque) and
+ * cached for subsequent calls.
+ *
+ * volatile on cache/ready is load-bearing, not defensive: without it,
+ * -O2's interprocedural constant propagation sees straight through the
+ * whole "lazy init" idiom anyway.  Neither static ever has its address
+ * escape this function, so once inlined the optimizer can prove ready
+ * starts at 0, prove the if-branch always runs on the (only reachable)
+ * first call, evaluate that branch's union at compile time same as
+ * before, and fold the result into a plain pooled double right back
+ * where we started (confirmed: still ldc1 from ROM without volatile).
+ * volatile forbids exactly that: a volatile read or write is an
+ * observable effect the compiler must actually perform and can never
+ * assume the value of ahead of time, which blocks the fold.
+ *
+ * That alone still was not enough: hi/lo themselves are plain (non-
+ * volatile) parameters, so GCC is still free to evaluate the union
+ * access at compile time -- it just moved to computing that constant
+ * ahead of time and pooling THAT into .rodata for the one-time init
+ * (confirmed: still ldc1 from ROM, just relocated to the lazy-init
+ * branch instead of every call).  Routing the write and the read-back
+ * through volatile-qualified pointers forces both to be genuine runtime
+ * memory operations GCC cannot fold through, so the double is actually
+ * assembled at runtime from register-held integers via real stores and a
+ * real load -- to the stack (RDRAM), never to ROM. */
+/* Small-integer-valued doubles (1.0, 2.0, ...) turn out to need the same
+ * care: confirmed by rebuilding and re-checking the disassembly, GCC
+ * still pools some of these via .rodata + ldc1 in this codebase/version
+ * rather than always preferring the (cheaper, register-only) cvt.d.w
+ * path -- e.g. atan()'s two `1.0`s and one `2.0` did, even though the
+ * Taylor series loops' `(double)(2*n+1)` right next to them (an int
+ * variable, not a literal) did not.  Routing the literal through a
+ * volatile int forces a genuine runtime conversion GCC cannot fold: the
+ * value is unknowable at compile time, so cvt.d.w is the only option
+ * left, and no ROM access is ever involved. */
+static double n64_int2dbl(int n)
+{
+    volatile int vn = n;
+    return (double)vn;
+}
+
+static double n64_lazy_double(volatile double *cache, volatile int *ready, uint32_t hi, uint32_t lo)
+{
+    if (!*ready) {
+        union { struct { uint32_t hi, lo; } w; double d; } u;  /* big-endian: hi first */
+        volatile uint32_t *vw = (volatile uint32_t *)&u;
+        vw[0] = hi;
+        vw[1] = lo;
+        *cache = *(volatile double *)&u;
+        *ready = 1;
+    }
+    return *cache;
+}
+
+static double n64_pi(void)
+{
+    static volatile double cache; static volatile int ready;
+    return n64_lazy_double(&cache, &ready, 0x400921FBu, 0x54442D18u); /* 3.14159265358979323846 */
+}
+
+static double n64_two_pi(void)
+{
+    static volatile double cache; static volatile int ready;
+    return n64_lazy_double(&cache, &ready, 0x401921FBu, 0x54442D18u); /* 6.28318530717958647692 */
+}
+
+static double n64_half_pi(void)
+{
+    static volatile double cache; static volatile int ready;
+    return n64_lazy_double(&cache, &ready, 0x3FF921FBu, 0x54442D18u); /* 1.57079632679489661923 */
+}
+
+#define N64_PI      (n64_pi())
+#define N64_TWO_PI  (n64_two_pi())
+#define N64_HALF_PI (n64_half_pi())
+
+static double n64_fmod(double x, double y)
+{
+    /* (int), not (long long): a 32-bit double<->int conversion compiles to
+     * the MIPS FPU's native trunc.w.d/cvt.d.w instructions.  long long
+     * would need libgcc's __fixdfdi/__floatdidf soft-conversion helpers,
+     * which this -nostdlib build doesn't link.  32 bits comfortably
+     * covers every quotient this function is actually asked to reduce
+     * (bounded rotation angles), so there is no real range lost here. */
+    double q = x / y;
+    double iq = (double)(int)q;   /* truncate toward zero */
+    return x - iq * y;
+}
+
+double sin(double x)
+{
+    double x2, term, sum;
+    int n;
+
+    x = n64_fmod(x, N64_TWO_PI);
+    if (x > N64_PI)
+        x -= N64_TWO_PI;
+    else if (x < -N64_PI)
+        x += N64_TWO_PI;
+
+    /* Taylor series around 0; x is already in [-pi, pi] so this converges
+     * to well within float precision in a handful of terms. */
+    x2 = x * x;
+    term = x;
+    sum = x;
+    for (n = 1; n <= 8; n++) {
+        term *= -x2 / (double)((2 * n) * (2 * n + 1));
+        sum += term;
+    }
+    return sum;
+}
+
+double cos(double x)
+{
+    return sin(x + N64_HALF_PI);
+}
+
+float sinf(float x) { return (float)sin((double)x); }
+float cosf(float x) { return (float)cos((double)x); }
 double fabs(double x) { double r; asm volatile("abs.d %0,%1":"=f"(r):"f"(x)); return r; }
 float fabsf(float x)  { float r; asm volatile("abs.s %0,%1":"=f"(r):"f"(x)); return r; }
 
-/* atan2 / atan2f — needed by ArcTan/ArcTan2 in the game */
-double atan2(double y, double x) { return __builtin_atan2(y, x); }
-float atan2f(float y, float x)   { return (float)__builtin_atan2((double)y, (double)x); }
+/* -----------------------------------------------------------------------
+ * atan / atan2
+ *
+ * Same self-referential-builtin bug as sin/cos above: `atan2(y,x) {
+ * return __builtin_atan2(y,x); }` lowers to a call to atan2() itself (no
+ * libm in this freestanding build), which -O2 turns into an infinite
+ * `j <self>` loop.  Not reached by the intro sequence, but src/n64/bios.c's
+ * ArcTan2() calls through to this, and ArcTan2() is used by
+ * src/battle_anim_mons.c -- so this would hang exactly the same way, just
+ * later, the first time a battle animation needing it plays.
+ *
+ * Real implementation: atan(x) via the argument-halving identity
+ * atan(x) = 2*atan(x / (1 + sqrt(1+x^2))), which shrinks any input to at
+ * most tan(pi/8) =~ 0.414 in magnitude before the Taylor series below has
+ * to do any work, so it converges quickly everywhere; atan2 adds the
+ * standard quadrant handling atan() alone can't express.
+ * --------------------------------------------------------------------- */
+static double n64_atan_series(double x)
+{
+    double x2 = x * x, term = x, sum = x;
+    int n;
+    for (n = 1; n <= 12; n++) {
+        term *= -x2;
+        sum += term / (double)(2 * n + 1);
+    }
+    return sum;
+}
+
+double atan(double x)
+{
+    double y = x / (n64_int2dbl(1) + sqrt(n64_int2dbl(1) + x * x));
+    return n64_int2dbl(2) * n64_atan_series(y);
+}
+
+double atan2(double y, double x)
+{
+    /* Every comparison and the final return route "0" through
+     * n64_int2dbl() rather than a bare 0.0 literal: confirmed by
+     * disassembly that this codebase's GCC pools even a zero comparison
+     * via .rodata + ldc1 in this function, same as the nonzero constants
+     * addressed above -- it is not just the "awkward" values that need
+     * this treatment. */
+    double zero = n64_int2dbl(0);
+    if (x > zero)
+        return atan(y / x);
+    if (x < zero)
+        return y >= zero ? atan(y / x) + N64_PI : atan(y / x) - N64_PI;
+    /* x == 0 */
+    if (y > zero)  return N64_HALF_PI;
+    if (y < zero)  return -N64_HALF_PI;
+    return zero;   /* atan2(0, 0): undefined, matches common convention */
+}
+
+float atan2f(float y, float x) { return (float)atan2((double)y, (double)x); }
 
 /* __memcpy_chk / __memset_chk — GCC fortify stubs (should not be called with _FORTIFY_SOURCE=0) */
 void *__memcpy_chk(void *dst, const void *src, __SIZE_TYPE__ n, __SIZE_TYPE__ dstlen)
