@@ -419,6 +419,15 @@ static void WaitForVBlank(void)
 
     while (!(gMain.intrCheck & INTR_FLAG_VBLANK))
         ;
+
+#if defined(N64_PORT) && N64_PORT
+    /* The N64 software compositor is far too slow to run inside the VI
+     * interrupt handler (see the comment on CopyBufferedValuesToGpuRegs()
+     * in src/n64/gpu_regs_n64.c) -- it is deferred here instead, once per
+     * main-loop iteration, outside interrupt context. */
+    extern void N64_RunDeferredCompositor(void);
+    N64_RunDeferredCompositor();
+#endif
 }
 
 void SetTrainerHillVBlankCounter(u32 *counter)

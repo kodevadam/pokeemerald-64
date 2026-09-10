@@ -56,6 +56,14 @@ void SoftReset(u8 resetFlags)
  * VBlankIntrWait / IntrWait / Halt / Stop
  * --------------------------------------------------------------------- */
 
+/* The N64 software compositor cannot run inside the VI interrupt handler
+ * (see the comment on CopyBufferedValuesToGpuRegs() in
+ * src/n64/gpu_regs_n64.c for why); it must be pumped from every busy-wait
+ * loop that can observe a VBlank passing, not just the main loop's own
+ * WaitForVBlank() in main.c -- game code elsewhere calls these BIOS-style
+ * waits directly (menus, animations, transitions, etc.). */
+extern void N64_RunDeferredCompositor(void);
+
 void VBlankIntrWait(void)
 {
     /* The main loop in main.c already calls WaitForVBlank() which polls
@@ -64,6 +72,7 @@ void VBlankIntrWait(void)
     INTR_CHECK &= ~INTR_FLAG_VBLANK;
     while (!(INTR_CHECK & INTR_FLAG_VBLANK))
         ;
+    N64_RunDeferredCompositor();
 }
 
 void IntrWait(u32 clearBeforeWait, u16 intrFlags)
@@ -72,6 +81,8 @@ void IntrWait(u32 clearBeforeWait, u16 intrFlags)
         INTR_CHECK &= ~intrFlags;
     while (!(INTR_CHECK & intrFlags))
         ;
+    if (intrFlags & INTR_FLAG_VBLANK)
+        N64_RunDeferredCompositor();
 }
 
 void Halt(void)
