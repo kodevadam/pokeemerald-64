@@ -258,7 +258,7 @@ $(BUILD_DIR)/$(ELF_NAME): $(ALL_OBJS) n64.ld
 #   is invoked (preproc opens them to inline their bytes as hex literals).
 $(BUILD_DIR)/%.o: %.c $(PREPROC) | $(GFX_STAMP)
 	@mkdir -p $(dir $@)
-	set -o pipefail; $(CC) $(CFLAGS) -E $< | $(PREPROC) -i $< $(CHARMAP) | sed 's/__asm__("svc [0-9]*")/__asm__("break")/g' | $(CC) $(CFLAGS) -MMD -MP -x c -c - -o $@
+	set -o pipefail; $(CC) $(CFLAGS) -E $< | $(PREPROC) -ib $< $(CHARMAP) | sed 's/__asm__("svc [0-9]*")/__asm__("break")/g' | $(CC) $(CFLAGS) -MMD -MP -x c -c - -o $@
 
 # Assemble .s (N64 platform sources)
 $(BUILD_DIR)/%.o: %.s
@@ -278,7 +278,7 @@ $(BUILD_DIR)/%.o: %.s
 AS_ARCH_FLAGS := -mips3 -mabi=32 -EB -G0
 $(BUILD_DIR)/data/%.o: data/%.s | $(GFX_STAMP)
 	@mkdir -p $(dir $@)
-	set -o pipefail; $(PREPROC) $< charmap.txt | gcc $(CPP_DATA_FLAGS) - | $(PREPROC) -ie $< charmap.txt | $(AS) $(AS_ARCH_FLAGS) -o $@
+	set -o pipefail; $(PREPROC) -b $< charmap.txt | gcc $(CPP_DATA_FLAGS) - | $(PREPROC) -ieb $< charmap.txt | $(AS) $(AS_ARCH_FLAGS) -o $@
 
 # ---------- Data file generation rules ----------------------------
 # Generate 4bpp/8bpp/pal binary data from source files using gbagfx.

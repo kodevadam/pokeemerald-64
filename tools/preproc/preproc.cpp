@@ -34,6 +34,7 @@
 static void UsageAndExit(const char *program);
 
 Charmap* g_charmap;
+bool g_bigEndianIncbin = false;
 
 void PrintAsmBytes(unsigned char *s, int length)
 {
@@ -147,7 +148,7 @@ const char* GetFileExtension(const char* filename)
 
 static void UsageAndExit(const char *program)
 {
-    std::fprintf(stderr, "Usage: %s [-i] [-e] SRC_FILE CHARMAP_FILE\nwhere -i denotes if input is from stdin\n      -e enables enum handling\n", program);
+    std::fprintf(stderr, "Usage: %s [-i] [-e] [-b] SRC_FILE CHARMAP_FILE\nwhere -i denotes if input is from stdin\n      -e enables enum handling\n      -b packs INCBIN_U16/S16/U32/S32 byte order for a big-endian compile target\n", program);
     std::exit(EXIT_FAILURE);
 }
 
@@ -159,8 +160,8 @@ int main(int argc, char **argv)
     bool isStdin = false;
     bool doEnum = false;
 
-    /* preproc [-i] [-e] SRC_FILE CHARMAP_FILE */
-    while ((opt = getopt(argc, argv, "ie")) != -1)
+    /* preproc [-i] [-e] [-b] SRC_FILE CHARMAP_FILE */
+    while ((opt = getopt(argc, argv, "ieb")) != -1)
     {
         switch (opt)
         {
@@ -169,6 +170,9 @@ int main(int argc, char **argv)
             break;
         case 'e':
             doEnum = true;
+            break;
+        case 'b':
+            g_bigEndianIncbin = true;
             break;
         default:
             UsageAndExit(argv[0]);

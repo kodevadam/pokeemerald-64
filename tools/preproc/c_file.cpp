@@ -260,8 +260,74 @@ std::unique_ptr<unsigned char[]> CFile::ReadWholeFile(const std::string& path, i
     return buffer;
 }
 
+/*
+ * Packs `size` file bytes starting at `offset` into a single C integer
+ * literal, which TryConvertIncbin() then prints into the generated .c/.s
+ * source for INCBIN_[SU]16/32.
+ *
+ * The compiler stores that literal's numeric VALUE using the compile
+ * target's own endianness -- it has no notion of "the file this number
+ * came from".  So whichever byte order this function uses to combine the
+ * file bytes into a value determines, together with the target's
+ * endianness, what byte order that value ends up in when the compiler
+ * writes it back out to memory:
+ *
+ *   little-endian packing (buffer[offset] is the LOW byte, matching how a
+ *   little-endian CPU would naturally read consecutive file bytes) plus a
+ *   little-endian compile target reproduces the original file bytes
+ *   exactly.  This is the classic pokeemerald case (target: ARM/agbcc,
+ *   little-endian) and is also correct for anything that only ever reads
+ *   the resulting array through a same-width (u16/u32) load, on ANY
+ *   target -- the compiler round-trips the abstract value correctly
+ *   either way, that part never depends on this function.
+ *
+ *   Little-endian packing on a BIG-ENDIAN compile target, however,
+ *   reverses the byte order within each element relative to the source
+ *   file: e.g. file bytes [0x34, 0x12] pack here into the value 0x1234,
+ *   which a big-endian compiler then stores as memory bytes [0x12, 0x34]
+ *   -- backwards from the file.  Most of the pokeemerald codebase reads
+ *   compressed/graphics blobs through a `u8 *` (LZ77/RLE/Huffman
+ *   decompressors chief among them), which sees raw memory bytes
+ *   directly, bypassing the width-based load that would otherwise mask
+ *   the reversal.  Against reversed data, a decompression header's
+ *   declared size decodes as spurious garbage, and the decompression
+ *   loop can run for a very long time (a corrupted 24-bit GBA LZ77 size
+ *   field can specify up to 16 MiB of output) with no crash or other
+ *   diagnostic -- indistinguishable from a hang.  See the n64 port's
+ *   session notes for how this was actually diagnosed: it presented as
+ *   Pokemon Emerald 64's boot sequence stalling forever partway through
+ *   drawing the copyright screen, inside LZ77UnCompVram().
+ *
+ * The -b flag (g_bigEndianIncbin) exists for exactly that N64 (MIPS,
+ * big-endian) port: it packs big-endian here (buffer[offset] as the HIGH
+ * byte) instead, so that a big-endian compiler's own big-endian storage
+ * of the resulting value reproduces the original file byte order -- the
+ * same property little-endian packing already gives little-endian
+ * targets, just for the opposite target endianness.  Leaving the flag
+ * off keeps every existing (little-endian) build byte-for-byte
+ * unchanged.
+ */
 int ExtractData(const std::unique_ptr<unsigned char[]>& buffer, int offset, int size)
 {
+    if (g_bigEndianIncbin)
+    {
+        switch (size)
+        {
+        case 1:
+            return buffer[offset];
+        case 2:
+            return (buffer[offset] << 8)
+                | buffer[offset + 1];
+        case 4:
+            return (buffer[offset] << 24)
+                | (buffer[offset + 1] << 16)
+                | (buffer[offset + 2] << 8)
+                | buffer[offset + 3];
+        default:
+            FATAL_ERROR("Invalid size passed to ExtractData.\n");
+        }
+    }
+
     switch (size)
     {
     case 1:

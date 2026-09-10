@@ -51,4 +51,9 @@ const unsigned long kMaxCharmapSequenceLength = 16;
 
 extern Charmap* g_charmap;
 
+/* Set by the -b command-line flag.  Affects how CFile::ExtractData packs
+ * multi-byte INCBIN_U16/INCBIN_S16/INCBIN_U32/INCBIN_S32 values -- see the
+ * comment at ExtractData's definition in c_file.cpp for why this exists. */
+extern bool g_bigEndianIncbin;
+
 #endif // PREPROC_H
