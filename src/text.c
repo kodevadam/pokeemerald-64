@@ -523,6 +523,50 @@ void RestoreTextColors(u8 *fgColor, u8 *bgColor, u8 *shadowColor)
     GenerateFontHalfRowLookupTable(*fgColor, *bgColor, *shadowColor);
 }
 
+#if defined(N64_PORT) && N64_PORT
+/* sFontHalfRowOffsets lives in .rodata, which stays in cartridge ROM on N64
+ * and is reached over the PI bus, where only word-sized reads are reliable.
+ * Mirror it into RDRAM once so the per-pixel indexing below is plain memory. */
+static u8 sFontHalfRowOffsetsRam[sizeof(sFontHalfRowOffsets)];
+static bool8 sFontHalfRowOffsetsCopied = FALSE;
+
+static void CopyFontHalfRowOffsets(void)
+{
+    const u32 *src = (const u32 *)sFontHalfRowOffsets;
+    u32 *dst = (u32 *)sFontHalfRowOffsetsRam;
+
+    for (u32 i = 0; i < sizeof(sFontHalfRowOffsets) / 4; i++)
+        dst[i] = src[i];
+
+    sFontHalfRowOffsetsCopied = TRUE;
+}
+
+/* The GBA reads each glyph as little-endian halfwords and writes each tile
+ * row as a little-endian word. Neither survives a big-endian load or store,
+ * and the halfword loads would not survive the PI bus either, so read whole
+ * words, pull the bytes out in the order the GBA would have seen them, and
+ * byte-swap the result back into the byte order the 4bpp blitter expects. */
+void DecompressGlyphTile(const void *src_, void *dest_)
+{
+    const u32 *src = src_;
+    u32 *dest = dest_;
+
+    if (!sFontHalfRowOffsetsCopied)
+        CopyFontHalfRowOffsets();
+
+    for (u32 i = 0; i < 4; i++)
+    {
+        u32 w = *src++;
+        u32 a = sFontHalfRowLookupTable[sFontHalfRowOffsetsRam[(w >> 24) & 0xFF]];
+        u32 b = sFontHalfRowLookupTable[sFontHalfRowOffsetsRam[(w >> 16) & 0xFF]];
+        u32 c = sFontHalfRowLookupTable[sFontHalfRowOffsetsRam[(w >>  8) & 0xFF]];
+        u32 d = sFontHalfRowLookupTable[sFontHalfRowOffsetsRam[(w >>  0) & 0xFF]];
+
+        *dest++ = __builtin_bswap32((a << 16) | b);
+        *dest++ = __builtin_bswap32((c << 16) | d);
+    }
+}
+#else
 void DecompressGlyphTile(const void *src_, void *dest_)
 {
     u32 temp;
@@ -553,6 +597,7 @@ void DecompressGlyphTile(const void *src_, void *dest_)
     temp = *(src++);
     *(dest++) = ((sFontHalfRowLookupTable[sFontHalfRowOffsets[temp & 0xFF]]) << 16) | (sFontHalfRowLookupTable[sFontHalfRowOffsets[temp >> 8]]);
 }
+#endif
 
 static u8 UNUSED GetLastTextColor(u8 colorType)
 {
@@ -579,7 +624,15 @@ inline static void GLYPH_COPY(u8 *windowTiles, u32 widthOffset, u32 j, u32 i, u3
     dummyX = j;
     for (; i < yAdd; i++)
     {
+        /* The glyph buffer holds each tile row in the GBA's byte order, so
+         * that the paths which copy it straight out as 4bpp tile data still
+         * work. Reading it as a word to peel pixels off the bottom needs
+         * that order undone first on a big-endian CPU. */
+#if defined(N64_PORT) && N64_PORT
+        pixelData = __builtin_bswap32(*glyphPixels++);
+#else
         pixelData = *glyphPixels++;
+#endif
         for (j = dummyX; j < xAdd; j++)
         {
             if ((toOrr = pixelData & 0xF))

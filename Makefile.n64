@@ -33,6 +33,7 @@ NM      := $(PREFIX)nm
 SIZE    := $(PREFIX)size
 
 # ROM CRC fixer — build our own if not present
+PYTHON  := python3
 CHKSUM64 := $(BUILD_DIR)/tools/n64crc
 CHKSUM64_SRC := tools/n64crc.c
 
@@ -241,7 +242,15 @@ $(BUILD_DIR)/$(ROM_NAME): $(BUILD_DIR)/$(ELF_NAME)
 	$(CHKSUM64) $@
 	@echo "ROM built: $@ ($$(wc -c < $@) bytes)"
 
-$(BUILD_DIR)/$(ELF_NAME): $(ALL_OBJS) n64.ld
+# Which .rodata blobs stay in cartridge ROM instead of being copied to RDRAM.
+# See tools/n64_rodata_split.py and the .rodata.blobs note in n64.ld.
+RODATA_SPLIT_LD := $(BUILD_DIR)/rodata_rom.ld
+
+$(RODATA_SPLIT_LD): $(ALL_OBJS) tools/n64_rodata_split.py
+	@mkdir -p $(dir $@)
+	$(PYTHON) tools/n64_rodata_split.py $@ $(ALL_OBJS)
+
+$(BUILD_DIR)/$(ELF_NAME): $(ALL_OBJS) n64.ld $(RODATA_SPLIT_LD)
 	@mkdir -p $(dir $@)
 	$(LD) $(ALL_OBJS) $(LDFLAGS) -o $@
 	$(SIZE) $@

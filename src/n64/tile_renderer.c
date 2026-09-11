@@ -131,8 +131,12 @@ static void ParseBgDesc(int bgNum, BgDesc *bg, int mode)
         bg->pb   = (s32)(s16)_REG16(paOffsets[ai] + 2);
         bg->pc   = (s32)(s16)_REG16(paOffsets[ai] + 4);
         bg->pd   = (s32)(s16)_REG16(paOffsets[ai] + 6);
-        bg->refX = (s32)_REG32(refXOffsets[ai] + 0);
-        bg->refY = (s32)_REG32(refXOffsets[ai] + 4);
+        /* BG2X/BG2Y are 32-bit registers the game writes as two halves
+         * (BG2X_L then BG2X_H). The software register file is big-endian,
+         * so a plain 32-bit read would put the _L half in the high word --
+         * reassemble them explicitly instead. */
+        bg->refX = (s32)((_REG16(refXOffsets[ai] + 2) << 16) | _REG16(refXOffsets[ai] + 0));
+        bg->refY = (s32)((_REG16(refXOffsets[ai] + 6) << 16) | _REG16(refXOffsets[ai] + 4));
         /* Sign-extend 28-bit value */
         if (bg->refX & 0x08000000) bg->refX |= 0xF0000000;
         if (bg->refY & 0x08000000) bg->refY |= 0xF0000000;
@@ -140,108 +144,174 @@ static void ParseBgDesc(int bgNum, BgDesc *bg, int mode)
 }
 
 /* -----------------------------------------------------------------------
- * Text-mode tile lookup for one pixel
+ * Per-scanline layer buffers
  *
- * Returns the palette colour index (0 = transparent) and the palette
- * number in *palNum (4bpp mode: 16-colour palette 0-15).
+ * The compositor used to look each pixel up individually, which meant
+ * re-reading the tilemap entry and re-deriving the character address
+ * eight times per tile -- around 500 CPU cycles per output pixel once
+ * the cache misses were counted, or ~0.2s per frame.  Instead each
+ * enabled layer now renders a whole scanline in 8-pixel tile runs, and
+ * the compositing pass just walks the resulting line buffers.
  * --------------------------------------------------------------------- */
-static int TextTilePixel(const BgDesc *bg, int px, int py, int *palNum)
-{
-    u8 *vram = VramBuf();
 
-    /* Tile map dimensions */
+
+/* A layer's scanline, already converted to the framebuffer's RGBA5551.
+ * RGB555toRGBA5551() always sets the alpha bit, so a zero entry can stand
+ * for "transparent" and no separate coverage array is needed. */
+static u16 sLine[4][DISPLAY_WIDTH];
+
+/* Palette pre-converted to RGBA5551 once per frame, so the inner loops
+ * never convert and never branch on the index:
+ *   sPal4 zeroes index 0 of each 16-colour bank (4bpp transparency),
+ *   sPal8 zeroes only index 0 (256-colour transparency). */
+static u16 sPal4[256];
+static u16 sPal8[256];
+
+static void BuildPaletteCache(const u16 *pltt)
+{
+    for (int i = 0; i < 256; i++) {
+        u16 c = RGB555toRGBA5551(PlttRead(pltt, i));
+        sPal8[i] = c;
+        sPal4[i] = (i & 0xF) ? c : 0;
+    }
+    sPal8[0] = 0;
+}
+
+/* -----------------------------------------------------------------------
+ * Text-mode (modes 0/1) scanline renderer
+ * --------------------------------------------------------------------- */
+static void RenderTextLine(const BgDesc *bg, int y, u16 *out)
+{
+    const u8 *vram = VramBuf();
+
     int mapW = 256 << (bg->screenSize & 1);   /* 256 or 512 px wide      */
     int mapH = 256 << (bg->screenSize >> 1);  /* 256 or 512 px tall      */
 
-    /* Apply scroll (wrap around map boundaries) */
-    int tx = ((px + bg->hOfs) & (mapW - 1));
-    int ty = ((py + bg->vOfs) & (mapH - 1));
+    int ty  = (y + bg->vOfs) & (mapH - 1);
+    int sby = ty >> 8;
+    int tileY = (ty & 0xFF) >> 3;
+    int rowInTile = ty & 7;
 
-    /* Which screenblock does this tile fall in?
-     * For 512-wide maps: screenblocks 0,1 side-by-side.
-     * For 512-tall  maps: screenblocks 0,1 stacked.
-     * For 512×512   maps: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right */
-    int sbx = tx / 256;
-    int sby = ty / 256;
-    int sbIndex = 0;
-    switch (bg->screenSize) {
-        case 1: sbIndex = sbx;          break;  /* 512×256 */
-        case 2: sbIndex = sby;          break;  /* 256×512 */
-        case 3: sbIndex = sby*2 + sbx;  break;  /* 512×512 */
-        default: sbIndex = 0;           break;  /* 256×256 */
-    }
+    int x = 0;
+    while (x < DISPLAY_WIDTH)
+    {
+        int tx  = (x + bg->hOfs) & (mapW - 1);
+        int sbx = tx >> 8;
 
-    /* Tile coordinate within its screenblock */
-    int tileX = (tx % 256) / TILE_WIDTH;
-    int tileY = (ty % 256) / TILE_HEIGHT;
+        /* Which screenblock does this tile fall in?
+         * 512-wide maps put screenblocks 0,1 side-by-side; 512-tall maps
+         * stack them; 512x512 uses 0 top-left, 1 top-right, 2 bottom-left,
+         * 3 bottom-right. */
+        int sbIndex;
+        switch (bg->screenSize) {
+            case 1:  sbIndex = sbx;          break;
+            case 2:  sbIndex = sby;          break;
+            case 3:  sbIndex = sby * 2 + sbx; break;
+            default: sbIndex = 0;            break;
+        }
 
-    /* Screenblock entry offset: 32×32 tiles, 2 bytes each */
-    int sbOffset = bg->screenBase + sbIndex * BG_SCREEN_SIZE;
-    int entryOffset = sbOffset + (tileY * 32 + tileX) * 2;
-    u16 entry = __builtin_bswap16(*(u16 *)(vram + entryOffset));
+        int tileX = (tx & 0xFF) >> 3;
+        int entryOffset = bg->screenBase + sbIndex * BG_SCREEN_SIZE
+                        + (tileY * 32 + tileX) * 2;
+        u16 entry = __builtin_bswap16(*(const u16 *)(vram + entryOffset));
 
-    int tileNum = entry & 0x3FF;
-    int hFlip   = (entry >> 10) & 1;
-    int vFlip   = (entry >> 11) & 1;
-    *palNum     = (entry >> 12) & 0xF;
+        int tileNum = entry & 0x3FF;
+        int hFlip   = (entry >> 10) & 1;
+        int vFlip   = (entry >> 11) & 1;
+        int py      = vFlip ? 7 - rowInTile : rowInTile;
 
-    /* Sub-pixel within tile */
-    int pixX = (tx % TILE_WIDTH);
-    int pixY = (ty % TILE_HEIGHT);
-    if (hFlip) pixX = 7 - pixX;
-    if (vFlip) pixY = 7 - pixY;
+        int first = tx & 7;                 /* first pixel of this tile   */
+        int n     = 8 - first;              /* pixels left in the tile    */
+        if (x + n > DISPLAY_WIDTH)
+            n = DISPLAY_WIDTH - x;
 
-    /* Read tile data */
-    int charOffset = bg->charBase + tileNum * (bg->bpp8 ? TILE_SIZE_8BPP : TILE_SIZE_4BPP);
-    if (bg->bpp8) {
-        *palNum = 0;
-        return vram[charOffset + pixY * 8 + pixX];
-    } else {
-        u8 byte = vram[charOffset + pixY * 4 + pixX / 2];
-        return (pixX & 1) ? (byte >> 4) : (byte & 0xF);
+        if (bg->bpp8)
+        {
+            const u8 *row = vram + bg->charBase + tileNum * TILE_SIZE_8BPP + py * 8;
+            for (int i = 0; i < n; i++) {
+                int sx = first + i;
+                if (hFlip) sx = 7 - sx;
+                out[x + i] = sPal8[row[sx]];
+            }
+        }
+        else
+        {
+            /* Tile rows are 4 bytes and always 4-byte aligned, so the whole
+             * row comes in with one load. Big-endian: byte 0 is the top
+             * byte, and within a byte the low nibble is the left pixel. */
+            const u32 *row = (const u32 *)(vram + bg->charBase
+                                           + tileNum * TILE_SIZE_4BPP + py * 4);
+            const u16 *pal = sPal4 + ((entry >> 12) & 0xF) * 16;
+            u32 w = *row;
+
+            if (n == 8 && !hFlip) {
+                /* The common case: a whole unflipped tile */
+                out[x + 0] = pal[(w >> 24) & 0xF];
+                out[x + 1] = pal[(w >> 28) & 0xF];
+                out[x + 2] = pal[(w >> 16) & 0xF];
+                out[x + 3] = pal[(w >> 20) & 0xF];
+                out[x + 4] = pal[(w >>  8) & 0xF];
+                out[x + 5] = pal[(w >> 12) & 0xF];
+                out[x + 6] = pal[(w >>  0) & 0xF];
+                out[x + 7] = pal[(w >>  4) & 0xF];
+            } else {
+                for (int i = 0; i < n; i++) {
+                    int sx = first + i;
+                    if (hFlip) sx = 7 - sx;
+                    int shift = (sx & 1) * 4 + (3 - (sx >> 1)) * 8;
+                    out[x + i] = pal[(w >> shift) & 0xF];
+                }
+            }
+        }
+
+        x += n;
     }
 }
 
 /* -----------------------------------------------------------------------
- * Affine BG pixel lookup
+ * Affine (modes 1/2) scanline renderer
+ *
+ * Steps the texture coordinate by pa/pc across the line instead of
+ * recomputing the full matrix product per pixel, and masks instead of
+ * dividing -- affine map sizes are always powers of two.
  * --------------------------------------------------------------------- */
-static int AffineTilePixel(const BgDesc *bg, int screenX, int screenY, int line)
+static void RenderAffineLine(const BgDesc *bg, int y, u16 *out)
 {
-    u8 *vram = VramBuf();
+    const u8 *vram = VramBuf();
 
-    /* Map size: 128, 256, 512, 1024 pixels */
     static const int affineMapSizes[4] = {128, 256, 512, 1024};
-    int mapSize = affineMapSizes[bg->screenSize];
+    int mapSize  = affineMapSizes[bg->screenSize];
+    int mapMask  = mapSize - 1;
+    int mapTiles = mapSize >> 3;
 
-    /* Apply affine transform (fixed-point 8.8) */
-    s32 texX = bg->refX + bg->pa * screenX + bg->pb * line;
-    s32 texY = bg->refY + bg->pc * screenX + bg->pd * line;
+    s32 texX = bg->refX + bg->pb * y;
+    s32 texY = bg->refY + bg->pd * y;
 
-    /* Convert from 8.8 fixed to pixel coords */
-    int px = texX >> 8;
-    int py = texY >> 8;
+    for (int x = 0; x < DISPLAY_WIDTH; x++, texX += bg->pa, texY += bg->pc)
+    {
+        int px = texX >> 8;
+        int py = texY >> 8;
 
-    /* Overflow handling */
-    if (bg->areaOverflow) {
-        px = ((px % mapSize) + mapSize) % mapSize;
-        py = ((py % mapSize) + mapSize) % mapSize;
-    } else {
-        if (px < 0 || px >= mapSize || py < 0 || py >= mapSize)
-            return 0;  /* transparent outside */
+        if (bg->areaOverflow) {
+            px &= mapMask;
+            py &= mapMask;
+        } else if (px < 0 || px >= mapSize || py < 0 || py >= mapSize) {
+            out[x] = 0;
+            continue;
+        }
+
+        /* Affine screenblocks hold 1-byte entries and are always 8bpp */
+        u8 tileNum = vram[bg->screenBase + (py >> 3) * mapTiles + (px >> 3)];
+        out[x] = sPal8[vram[bg->charBase + tileNum * TILE_SIZE_8BPP
+                            + (py & 7) * 8 + (px & 7)]];
     }
+}
 
-    int tileX = px / TILE_WIDTH;
-    int tileY = py / TILE_HEIGHT;
-    int mapTiles = mapSize / TILE_WIDTH;
-
-    /* Affine screenblock: 1-byte entries */
-    u8 tileNum = vram[bg->screenBase + tileY * mapTiles + tileX];
-
-    int pixX = px % TILE_WIDTH;
-    int pixY = py % TILE_HEIGHT;
-
-    /* Affine BGs always use 8bpp */
-    return vram[bg->charBase + tileNum * TILE_SIZE_8BPP + pixY * 8 + pixX];
+/* RGBA5551 back to the GBA's RGB555, for the blending paths which work in
+ * the palette's own colour space. */
+static inline u16 RGBA5551toRGB555(u16 c)
+{
+    return (u16)(((c >> 11) & 0x1F) | (((c >> 6) & 0x1F) << 5) | (((c >> 1) & 0x1F) << 10));
 }
 
 /* -----------------------------------------------------------------------
@@ -250,35 +320,56 @@ static int AffineTilePixel(const BgDesc *bg, int screenX, int screenY, int line)
  * Returns the layer enable bits for a given pixel position.
  * Bit layout mirrors GBA WININ/WINOUT: bits 5-0 = BG0-BG3, OBJ, effects.
  * --------------------------------------------------------------------- */
-static u16 GetWindowMask(int x, int y)
+static u8 sWinMaskRow[DISPLAY_WIDTH];
+
+/* Fills sWinMaskRow for one scanline. Returns 0 if no window is enabled,
+ * in which case the row is left untouched and every pixel is 0x3F. */
+static int BuildWindowMaskRow(int y)
 {
     u16 dispcnt = _REG16(REG_OFFSET_DISPCNT);
     int win0en  = (dispcnt >> 13) & 1;
     int win1en  = (dispcnt >> 14) & 1;
 
     if (!win0en && !win1en)
-        return 0x3F;  /* all layers visible, no windowing */
+        return 0;  /* all layers visible, no windowing */
 
     u16 winin  = _REG16(REG_OFFSET_WININ);
     u16 winout = _REG16(REG_OFFSET_WINOUT);
 
+    u8 outMask = (u8)(winout & 0x3F);
+    u8 in0Mask = (u8)(winin & 0x3F);
+    u8 in1Mask = (u8)((winin >> 8) & 0x3F);
+
+    int x0a = 0, x0b = 0, x1a = 0, x1b = 0;
+
     if (win0en) {
         u16 win0h = _REG16(REG_OFFSET_WIN0H);
         u16 win0v = _REG16(REG_OFFSET_WIN0V);
-        int x1 = (win0h >> 8) & 0xFF,  x2 = win0h & 0xFF;
-        int y1 = (win0v >> 8) & 0xFF,  y2 = win0v & 0xFF;
-        if (x >= x1 && x < x2 && y >= y1 && y < y2)
-            return winin & 0x3F;
+        int y1 = (win0v >> 8) & 0xFF, y2 = win0v & 0xFF;
+        if (y >= y1 && y < y2) {
+            x0a = (win0h >> 8) & 0xFF;
+            x0b = win0h & 0xFF;
+        }
     }
     if (win1en) {
         u16 win1h = _REG16(REG_OFFSET_WIN1H);
         u16 win1v = _REG16(REG_OFFSET_WIN1V);
-        int x1 = (win1h >> 8) & 0xFF,  x2 = win1h & 0xFF;
-        int y1 = (win1v >> 8) & 0xFF,  y2 = win1v & 0xFF;
-        if (x >= x1 && x < x2 && y >= y1 && y < y2)
-            return (winin >> 8) & 0x3F;
+        int y1 = (win1v >> 8) & 0xFF, y2 = win1v & 0xFF;
+        if (y >= y1 && y < y2) {
+            x1a = (win1h >> 8) & 0xFF;
+            x1b = win1h & 0xFF;
+        }
     }
-    return (winout & 0x3F);  /* outside both windows */
+
+    for (int x = 0; x < DISPLAY_WIDTH; x++) {
+        if (x >= x0a && x < x0b)
+            sWinMaskRow[x] = in0Mask;
+        else if (x >= x1a && x < x1b)
+            sWinMaskRow[x] = in1Mask;
+        else
+            sWinMaskRow[x] = outMask;
+    }
+    return 1;
 }
 
 /* -----------------------------------------------------------------------
@@ -384,8 +475,18 @@ void N64_CompositeFrame(void)
     u16 tgt2Mask = (bldcnt >> 8) & 0x3F;
     u16 *pltt    = PlttBuf();
 
-    /* Backdrop colour (BG palette entry 0) — palette bytes are LE from ROM */
+    BuildPaletteCache(pltt);
+
+    /* Backdrop colour (BG palette entry 0) */
     u16 backdropRGB555 = PlttRead(pltt, 0);
+    u16 backdropRGBA   = RGB555toRGBA5551(backdropRGB555);
+
+    /* Fast path: no windows and no colour effects, which is what most of
+     * the game runs in. The layer buffers are already in framebuffer
+     * format, so compositing is a back-to-front overwrite of non-zero
+     * (non-transparent) pixels with no per-pixel conversion at all. */
+    int fastPath = (blendEff == 0)
+                && !((dispcnt >> 13) & 1) && !((dispcnt >> 14) & 1);
 
     for (int y = 0; y < DISPLAY_HEIGHT; y++) {
         /* Apply per-scanline register changes (battle wave effects, etc.) */
@@ -395,11 +496,58 @@ void N64_CompositeFrame(void)
         for (int i = 0; i < 4; i++)
             ParseBgDesc(i, &bgs[i], bgMode);
 
+        int windowed = fastPath ? 0 : BuildWindowMaskRow(y);
+
+        /* Render each enabled layer's scanline into its own line buffer */
+        for (int bgIdx = 0; bgIdx < 4; bgIdx++) {
+            if (!bgs[bgIdx].enabled)
+                continue;
+
+            u16 *lb = sLine[bgIdx];
+
+            if (bgMode == 0 || (bgMode == 1 && bgIdx < 2)) {
+                RenderTextLine(&bgs[bgIdx], y, lb);
+            } else if ((bgMode == 1 && bgIdx == 2) || bgMode == 2) {
+                RenderAffineLine(&bgs[bgIdx], y, lb);
+            } else if (bgMode == 3 && bgIdx == 2) {
+                /* Bitmap mode 3: 240x160 direct-colour (LE bytes from ROM) */
+                const u16 *src = (const u16 *)(VramBuf() + y * DISPLAY_WIDTH * 2);
+                for (int x = 0; x < DISPLAY_WIDTH; x++)
+                    lb[x] = RGB555toRGBA5551(__builtin_bswap16(src[x]));
+            } else if (bgMode == 4 && bgIdx == 2) {
+                /* Bitmap mode 4: 240x160 8bpp paletted */
+                int frame = (dispcnt >> 4) & 1;
+                const u8 *src = VramBuf() + frame * 0xA000 + y * DISPLAY_WIDTH;
+                for (int x = 0; x < DISPLAY_WIDTH; x++)
+                    lb[x] = sPal8[src[x]];
+            } else {
+                memset(lb, 0, sizeof(sLine[0]));
+            }
+        }
+
         u16 *rowOut = gN64GBAFramebuffer + y * DISPLAY_WIDTH;
 
+        if (fastPath) {
+            for (int x = 0; x < DISPLAY_WIDTH; x++)
+                rowOut[x] = backdropRGBA;
+
+            /* Paint back to front; a zero entry is transparent */
+            for (int li = 3; li >= 0; li--) {
+                int bgIdx = layerOrder[li];
+                if (!bgs[bgIdx].enabled)
+                    continue;
+                const u16 *lb = sLine[bgIdx];
+                for (int x = 0; x < DISPLAY_WIDTH; x++) {
+                    u16 v = lb[x];
+                    if (v)
+                        rowOut[x] = v;
+                }
+            }
+            continue;
+        }
+
         for (int x = 0; x < DISPLAY_WIDTH; x++) {
-            /* Window mask for this pixel */
-            u16 winMask = GetWindowMask(x, y);
+            u16 winMask = windowed ? sWinMaskRow[x] : 0x3F;
 
             /* Composite layers from front to back */
             u16 topColour  = backdropRGB555;  /* fallback = backdrop       */
@@ -415,59 +563,26 @@ void N64_CompositeFrame(void)
                 if (!bgs[bgIdx].enabled) continue;
                 if (!(winMask & (1 << bgIdx))) continue;
 
-                u16 colour = 0;
-                int transparent = 1;
+                u16 v = sLine[bgIdx][x];
+                if (!v) continue;
 
-                if (bgMode == 0 || (bgMode == 1 && bgIdx < 2)) {
-                    /* Text mode */
-                    int palNum = 0;
-                    int palIdx = TextTilePixel(&bgs[bgIdx], x, y, &palNum);
-                    if (palIdx != 0) {
-                        transparent = 0;
-                        if (bgs[bgIdx].bpp8)
-                            colour = PlttRead(pltt, palIdx);
-                        else
-                            colour = PlttRead(pltt, palNum * 16 + palIdx);
-                    }
-                } else if ((bgMode == 1 && bgIdx == 2) || bgMode == 2) {
-                    /* Affine mode */
-                    int palIdx = AffineTilePixel(&bgs[bgIdx], x, y, y);
-                    if (palIdx != 0) {
-                        transparent = 0;
-                        colour = PlttRead(pltt, palIdx);
-                    }
-                } else if (bgMode == 3 && bgIdx == 2) {
-                    /* Bitmap mode 3: 240×160 direct-colour in VRAM (LE bytes from ROM) */
-                    colour = __builtin_bswap16(*(u16 *)(VramBuf() + (y * 240 + x) * 2));
-                    transparent = 0;
-                } else if (bgMode == 4 && bgIdx == 2) {
-                    /* Bitmap mode 4: 240×160 8bpp paletted */
-                    int frame = (dispcnt >> 4) & 1;
-                    u8  palIdx8 = VramBuf()[frame * 0xA000 + y * 240 + x];
-                    if (palIdx8 != 0) {
-                        transparent = 0;
-                        colour = PlttRead(pltt, palIdx8);
-                    }
-                }
-
-                if (!transparent) {
-                    if (!gotTop) {
-                        topColour = colour;
-                        topLayer  = bgIdx;
-                        gotTop    = 1;
-                    } else if (!gotBot) {
-                        botColour = colour;
-                        botLayer  = bgIdx;
-                        gotBot    = 1;
-                    }
+                u16 colour = RGBA5551toRGB555(v);
+                if (!gotTop) {
+                    topColour = colour;
+                    topLayer  = bgIdx;
+                    gotTop    = 1;
+                } else {
+                    botColour = colour;
+                    botLayer  = bgIdx;
+                    gotBot    = 1;
                 }
             }
 
             /* Apply colour effects */
             u16 finalColour = topColour;
             if (blendEff == 1 && gotTop &&
-                (tgt1Mask & (1 << (topLayer + 5 < 0 ? 5 : topLayer))) &&
-                (tgt2Mask & (1 << (botLayer < 0 ? 5 : botLayer))))
+                (tgt1Mask & (topLayer < 0 ? 0x20 : (1 << topLayer))) &&
+                (tgt2Mask & (botLayer < 0 ? 0x20 : (1 << botLayer))))
             {
                 finalColour = BlendColours(topColour, botColour);
             } else if (blendEff == 2 &&

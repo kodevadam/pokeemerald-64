@@ -200,8 +200,15 @@ void N64_CompositeSprites(void)
         }
 
         /* Tile stride: 1D mapping packs tiles sequentially;
-         * 2D mapping has a fixed 32-tile stride per row. */
-        int tileRowStride = objVram1D ? (spWidth / TILE_WIDTH) : 32;
+         * 2D mapping has a fixed 32-tile stride per row.
+         *
+         * OAM's tile number is always counted in 32-byte units, whatever the
+         * colour depth, so an 8bpp tile takes two of them and both the row
+         * stride and the step between adjacent tiles double. Treating the
+         * number as an 8bpp tile index instead made every 8bpp sprite past
+         * its first tile read from the wrong place -- which is why the
+         * "EMERALD VERSION" banner came out with its right half as noise. */
+        int tileRowStride = objVram1D ? ((spWidth / TILE_WIDTH) << bpp8) : 32;
 
         for (int sy = 0; sy < bbH; sy++) {
             int fbY = y + sy;
@@ -237,7 +244,7 @@ void N64_CompositeSprites(void)
                 /* Tile index within sprite */
                 int tileX = pixX / TILE_WIDTH;
                 int tileY = pixY / TILE_HEIGHT;
-                int tile  = tileNum + tileY * tileRowStride + tileX;
+                int tile  = tileNum + tileY * tileRowStride + (tileX << bpp8);
 
                 /* Sub-pixel within tile */
                 int subX = pixX % TILE_WIDTH;
@@ -248,7 +255,7 @@ void N64_CompositeSprites(void)
 
                 int palIdx;
                 if (bpp8) {
-                    int charOffset = tile * TILE_SIZE_8BPP;
+                    int charOffset = tile * TILE_SIZE_4BPP;   /* 32-byte units */
                     palIdx = objVram[charOffset + subY * 8 + subX];
                     if (palIdx == 0) continue;  /* transparent */
                 } else {

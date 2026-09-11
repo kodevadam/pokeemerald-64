@@ -34,6 +34,13 @@ MEMORY
      * their VMA (RDRAM for code/data, or ROM itself for read-only data).
      * The 4KB at 0xB0000000 is the N64 header; game sections start at +0x1000 */
     ROM    (rx)  : ORIGIN = 0xB0000000, LENGTH = 64M
+
+    /* The slice of RDRAM that holds the copied-to-RAM part of .rodata.
+     * Starts right above the 1 MB IPL3 DMA's at 0x80400000 (so the copy
+     * cannot land on crt0 while crt0 is still running out of it) and ends
+     * where the software GBA palette/VRAM/OAM buffers begin. Overflowing
+     * it is a link error rather than a mysterious corruption at runtime. */
+    RDRAM2 (rw)  : ORIGIN = 0x80500000, LENGTH = 0x290000
 }
 
 /*
@@ -108,14 +115,28 @@ SECTIONS
     __text_lma = LOADADDR(.text);
 
     /* ------------------------------------------------------------------ */
-    /*  Read-only game data: stays in ROM, accessed via KSEG1 PI bus.     */
+    /*  Bulk read-only blobs: stay in ROM, read over the KSEG1 PI bus.    */
     /*  VMA = LMA = ROM address (0xB0001000+), no RDRAM copy needed.      */
-    /*  The N64 CPU reads from 0xB0000000+ (KSEG1 uncached) or           */
-    /*  0x90000000+ (KSEG0 cached) — both map the same cartridge ROM.     */
+    /*                                                                     */
+    /*  The PI bus only answers WORD-sized reads. A byte or halfword load  */
+    /*  from cartridge space is turned into a word read at the unaligned   */
+    /*  address, and the PI rounds that down to a halfword boundary, so a  */
+    /*  byte at word-offset 2 or 3 comes back holding the byte from two    */
+    /*  bytes further on. That is real N64 behaviour, not an emulator      */
+    /*  quirk, and it means anything the game reads through a u8* or u16*  */
+    /*  cannot live here -- every text string and struct table included.   */
+    /*                                                                     */
+    /*  All of .rodata is 6.3 MB and does not fit in RDRAM, but the parts  */
+    /*  that do not fit are exactly the parts nothing reads that way: tile */
+    /*  graphics, palettes, font glyph bitmaps, sound banks and multiboot  */
+    /*  images, which all arrive by DMA or through the decompressors, and  */
+    /*  those read words. tools/n64_rodata_split.py picks them out by      */
+    /*  symbol name and size and writes the list included here; everything */
+    /*  it does not name falls through to the RDRAM .rodata below.        */
     /* ------------------------------------------------------------------ */
-    .rodata :
+    .rodata.blobs :
     {
-        *(.rodata .rodata.* .gnu.linkonce.r.*)
+        INCLUDE build/n64/rodata_rom.ld
         . = ALIGN(8);
     } > ROM
 
@@ -128,13 +149,31 @@ SECTIONS
 
     /* GBA script/event/text data from data/*.s
      * NOTE: input sections are named "script_data" (no leading dot),
-     * so we capture both forms: with and without the leading dot.      */
+     * so we capture both forms: with and without the leading dot.
+     * Stays in ROM: it is another megabyte, and the script engine reads it
+     * through ScriptReadByte/Halfword/Word, which are word-based on N64. */
     .script_data :
     {
         *(script_data script_data.*)
         *(.script_data .script_data.*)
         . = ALIGN(8);
     } > ROM
+
+    /* ------------------------------------------------------------------ */
+    /*  The rest of .rodata: copied to RDRAM at boot by crt0.s so that     */
+    /*  byte and halfword reads of it behave (see .rodata.blobs above).    */
+    /*  It sits in RDRAM2, the window between the 1 MB IPL3 loads at       */
+    /*  0x80400000 and the software GBA buffers at 0x80790000.            */
+    /* ------------------------------------------------------------------ */
+    .rodata :
+    {
+        __rodata_start = .;
+        *(.rodata .rodata.* .gnu.linkonce.r.*)
+        . = ALIGN(8);
+        __rodata_end = .;
+    } > RDRAM2 AT > ROM
+
+    __rodata_lma = LOADADDR(.rodata);
 
     /* ------------------------------------------------------------------ */
     /*  Initialised data                                                   */

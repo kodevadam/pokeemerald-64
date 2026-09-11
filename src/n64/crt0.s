@@ -191,6 +191,44 @@ __n64_boot:
 .Ldata_done:
 
     /* -----------------------------------------------------------------------
+     * Copy the RAM-resident part of .rodata from ROM to RDRAM.
+     *
+     * The PI bus only answers word-sized reads, so a byte or halfword load
+     * from cartridge space returns data from the wrong offset -- see the
+     * long note in n64.ld. Every const string and struct table therefore
+     * has to be read out of RDRAM instead, which means copying it up front.
+     * The bulk graphics blobs stay behind in ROM (.rodata.blobs) since
+     * nothing reads those a byte at a time.
+     *
+     * The destination window starts at 0x80500000, immediately above the
+     * 1 MB IPL3 loaded at 0x80400000, so this copy cannot overwrite the
+     * code it is running from.
+     * --------------------------------------------------------------------- */
+    la      $t0, __rodata_lma      /* KSEG1 ROM source                      */
+    la      $t1, __rodata_start    /* KSEG0 RDRAM destination               */
+    la      $t2, __rodata_end
+    beq     $t1, $t2, .Lrodata_done
+    nop
+.Lcopy_rodata:
+    lw      $t3, 0($t0)
+    sw      $t3, 0($t1)
+    addiu   $t0, $t0, 4
+    addiu   $t1, $t1, 4
+    bne     $t1, $t2, .Lcopy_rodata
+    nop
+
+    sync
+    la      $t0, __rodata_start
+    la      $t1, __rodata_end
+.Lrodata_dcache_flush:
+    cache   0x15, 0($t0)
+    addiu   $t0, $t0, 32
+    sltu    $t3, $t0, $t1
+    bnez    $t3, .Lrodata_dcache_flush
+    nop
+.Lrodata_done:
+
+    /* -----------------------------------------------------------------------
      * Clear BSS
      * Linker exports __bss_start and __bss_end (8-byte aligned)
      * --------------------------------------------------------------------- */

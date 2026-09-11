@@ -900,7 +900,38 @@ void CopyBgTilemapBufferToVram(u8 bg)
             sizeToLoad = 0;
             break;
         }
+#if defined(N64_PORT) && N64_PORT
+        // The tilemap buffer holds native u16 entries -- that is how every
+        // caller builds and reads them back (WriteSequenceToBgTilemapBuffer,
+        // FillBgTilemapBufferRect, the window code, ...). VRAM, on the other
+        // hand, holds tilemaps in the GBA's little-endian byte order, because
+        // that is how the ROM's own tilemap assets arrive (LZ77UnCompVram
+        // copies their bytes straight through) and what the software renderer
+        // swaps on read. Convert on the way across; without this every
+        // dynamically built tilemap -- menus, text windows, dialogue --
+        // reached the renderer with byte-swapped tile indices and drew
+        // nothing at all. Affine tilemaps are single bytes, so they copy
+        // straight through. The write goes direct rather than through
+        // LoadBgVram(), whose DMA3 copy is queued: a shared staging buffer
+        // would be clobbered by the next background's copy in the same frame.
+        if (sGpuBgConfigs.configs[bg].visible)
+        {
+            u32 offset = sGpuBgConfigs.configs[bg].mapBaseIndex * BG_SCREEN_SIZE;
+            if (GetBgType(bg) == BG_TYPE_NORMAL)
+            {
+                const u16 *src = sGpuBgConfigs2[bg].tilemap;
+                u16 *dst = (u16 *)(offset + BG_VRAM);
+                for (u16 i = 0; i < sizeToLoad / 2; i++)
+                    dst[i] = (u16)((src[i] >> 8) | (src[i] << 8));
+            }
+            else
+            {
+                CpuCopy16(sGpuBgConfigs2[bg].tilemap, (void *)(offset + BG_VRAM), sizeToLoad);
+            }
+        }
+#else
         LoadBgVram(bg, sGpuBgConfigs2[bg].tilemap, sizeToLoad, 0, 2);
+#endif
     }
 }
 
@@ -1238,10 +1269,20 @@ bool32 IsInvalidBg32(u8 bg)
 
 bool32 IsTileMapOutsideWram(u8 bg)
 {
+#if defined(N64_PORT) && N64_PORT
+    // The GBA check rejects tilemap buffers that sit above IWRAM, i.e. in
+    // VRAM, since those are already where the copy would send them. On N64
+    // every buffer lives in RDRAM at 0x80xxxxxx, which is above IWRAM_END
+    // (0x03008000), so the original comparison rejected every buffer and
+    // silently skipped all of the tilemap copies. Only a NULL buffer is
+    // unusable here.
+    return sGpuBgConfigs2[bg].tilemap == NULL;
+#else
     if (sGpuBgConfigs2[bg].tilemap > (void *)IWRAM_END)
         return TRUE;
     else if (sGpuBgConfigs2[bg].tilemap == NULL)
         return TRUE;
     else
         return FALSE;
+#endif
 }

@@ -813,11 +813,19 @@ static void Task_TitleScreenPhase3(u8 taskId)
             gBattle_BG1_X = 0;
         }
         UpdateLegendaryMarkingColor(gTasks[taskId].tCounter);
+#if !defined(N64_PORT) || !N64_PORT
+        // Attract mode: hand back to the copyright screen once the title
+        // BGM has played out. Disabled on N64, where every song is a stub
+        // that ends immediately (see src/n64/song_stubs.c) -- the status
+        // word is already 0 on this task's first frame, so the title
+        // screen bounced straight back to the copyright screen before a
+        // button press could ever be read, making the game unstartable.
         if ((gMPlayInfo_BGM.status & 0xFFFF) == 0)
         {
             BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_WHITEALPHA);
             SetMainCallback2(CB2_GoToCopyrightScreen);
         }
+#endif
     }
 }
 
