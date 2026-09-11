@@ -49,12 +49,16 @@ static inline u16 RGB555toRGBA5551(u16 gba)
     return (u16)((r << 11) | (g << 6) | (b << 1) | 1);
 }
 
-/* GBA palette data in SW_PALETTE is DMA-copied from ROM as raw LE bytes.
- * In big-endian mode a u16 read of LE data returns bswap16(value), so we
- * must byte-swap palette entries on every read. */
+/* Palette entries are stored native (LoadPalette byte-swaps the
+ * little-endian GBA asset once on the way in), so they read back
+ * directly as RGB555 -- the same values the game's own fade/blend code
+ * operates on. Tilemap entries and bitmap-mode pixels below are *not*
+ * native: nothing but this renderer ever reads them, so they stay as
+ * the raw little-endian bytes the assets ship with and get swapped at
+ * the point of use. */
 static inline u16 PlttRead(const u16 *p, int i)
 {
-    return __builtin_bswap16(p[i]);
+    return p[i];
 }
 
 /* -----------------------------------------------------------------------

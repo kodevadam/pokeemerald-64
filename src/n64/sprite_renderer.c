@@ -59,10 +59,11 @@ static inline u16 RGB555toRGBA5551_spr(u16 gba)
     return (u16)((r << 11) | (g << 6) | (b << 1) | 1);
 }
 
-/* OBJ palette data is DMA-copied from ROM as LE bytes; bswap on read. */
+/* OBJ palette entries are stored native -- LoadPalette byte-swaps the
+ * little-endian GBA asset once on the way in. */
 static inline u16 SpritePlttRead(const u16 *p, int i)
 {
-    return __builtin_bswap16(p[i]);
+    return p[i];
 }
 
 /* Window mask (also in tile_renderer.c — declared extern here) */

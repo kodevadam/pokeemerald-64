@@ -44,12 +44,29 @@ struct BgCnt
 };
 typedef volatile struct BgCnt vBgCnt;
 
+/* GCC fills bitfields starting from the most significant bit of the
+ * storage unit on big-endian targets and from the least significant bit
+ * on little-endian ones. The N64 port builds big-endian, so every
+ * hardware-format bitfield struct below has to be listed in reverse
+ * there to land on the same bits the GBA layout (and the code that
+ * manipulates these values with plain shifts and masks) expects. */
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define GBA_BITFIELDS_BIG_ENDIAN 1
+#endif
+
 struct PlttData
 {
+#ifdef GBA_BITFIELDS_BIG_ENDIAN
+    u16 unused_15:1;
+    u16 b:5; // blue
+    u16 g:5; // green
+    u16 r:5; // red
+#else
     u16 r:5; // red
     u16 g:5; // green
     u16 b:5; // blue
     u16 unused_15:1;
+#endif
 };
 
 struct OamData

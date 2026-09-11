@@ -81,17 +81,43 @@ static const u8 sRoundedDownGrayscaleMap[] = {
     31, 31
 };
 
+#if defined(N64_PORT) && N64_PORT
+// GBA palette assets are stored as little-endian u16s, but this CPU is
+// big-endian, so copying them in verbatim leaves every entry byte-swapped.
+// Everything downstream -- the fades and blends below, RGB()/GET_R() math,
+// direct RGB_WHITE writes, the software compositor -- works on native
+// RGB555 values, so swap once here on the way in rather than making every
+// consumer compensate. Swapping in place afterwards (rather than while
+// copying) keeps the read of src going through CpuCopy16, which knows how
+// to read ROM safely.
+static void SwapPaletteEndian(u16 *pltt, u16 size)
+{
+    for (u16 i = 0; i < size / 2; i++)
+        pltt[i] = (u16)((pltt[i] >> 8) | (pltt[i] << 8));
+}
+#endif
+
 void LoadCompressedPalette(const u32 *src, u16 offset, u16 size)
 {
     LZDecompressWram(src, gPaletteDecompressionBuffer);
     CpuCopy16(gPaletteDecompressionBuffer, &gPlttBufferUnfaded[offset], size);
+#if defined(N64_PORT) && N64_PORT
+    SwapPaletteEndian(&gPlttBufferUnfaded[offset], size);
+    CpuCopy16(&gPlttBufferUnfaded[offset], &gPlttBufferFaded[offset], size);
+#else
     CpuCopy16(gPaletteDecompressionBuffer, &gPlttBufferFaded[offset], size);
+#endif
 }
 
 void LoadPalette(const void *src, u16 offset, u16 size)
 {
     CpuCopy16(src, &gPlttBufferUnfaded[offset], size);
+#if defined(N64_PORT) && N64_PORT
+    SwapPaletteEndian(&gPlttBufferUnfaded[offset], size);
+    CpuCopy16(&gPlttBufferUnfaded[offset], &gPlttBufferFaded[offset], size);
+#else
     CpuCopy16(src, &gPlttBufferFaded[offset], size);
+#endif
 }
 
 void FillPalette(u16 value, u16 offset, u16 size)
