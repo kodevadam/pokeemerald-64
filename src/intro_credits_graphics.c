@@ -1006,8 +1006,8 @@ void CycleSceneryPalette(u8 mode)
                 x = gPlttBufferUnfaded[BG_PLTT_ID(0) + 10];
                 y = gPlttBufferUnfaded[BG_PLTT_ID(0) + 9];
             }
-            LoadPalette(&x, BG_PLTT_ID(0) + 9, sizeof(x));
-            LoadPalette(&y, BG_PLTT_ID(0) + 10, sizeof(y));
+            LoadPaletteNative(&x, BG_PLTT_ID(0) + 9, sizeof(x));
+            LoadPaletteNative(&y, BG_PLTT_ID(0) + 10, sizeof(y));
             break;
         case 2:
             if (gMain.vblankCounter1 & 3 || gPaletteFade.active)
@@ -1022,8 +1022,8 @@ void CycleSceneryPalette(u8 mode)
                 x = RGB(28, 24, 0);
                 y = RGB(7, 9, 15);
             }
-            LoadPalette(&x, BG_PLTT_ID(0) + 12, sizeof(x));
-            LoadPalette(&y, BG_PLTT_ID(0) + 13, sizeof(y));
+            LoadPaletteNative(&x, BG_PLTT_ID(0) + 12, sizeof(x));
+            LoadPaletteNative(&y, BG_PLTT_ID(0) + 13, sizeof(y));
             break;
         case 1:
             break;

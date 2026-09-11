@@ -59,6 +59,20 @@ extern u16 ALIGNED(4) gPlttBufferUnfaded[PLTT_BUFFER_SIZE];
 extern u16 ALIGNED(4) gPlttBufferFaded[PLTT_BUFFER_SIZE];
 
 void LoadCompressedPalette(const u32 *src, u16 offset, u16 size);
+#if defined(N64_PORT) && N64_PORT
+// Copies GBA-format (little-endian) palette data into the native-order
+// palette buffers. Use instead of CpuCopy16 whenever the source is a
+// palette asset rather than another palette buffer.
+void CpuCopyPalette16(const void *src, void *dest, u16 size);
+
+// LoadPalette() for colours that are already native -- RGB() literals and
+// data read back out of the palette buffers -- which must not be converted.
+void LoadPaletteNative(const void *src, u16 offset, u16 size);
+#else
+#define CpuCopyPalette16(src, dest, size) CpuCopy16(src, dest, size)
+#define LoadPaletteNative(src, offset, size) LoadPalette(src, offset, size)
+#endif
+
 void LoadPalette(const void *src, u16 offset, u16 size);
 void FillPalette(u16 value, u16 offset, u16 size);
 void TransferPlttBuffer(void);

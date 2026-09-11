@@ -1,6 +1,21 @@
 #include "global.h"
 #include "blit.h"
 
+#if defined(N64_PORT) && N64_PORT
+// Source bitmaps are often raw (uncompressed) graphics assets that stay in
+// cartridge ROM, where the PI bus only answers word-sized reads: a plain
+// byte load there comes back holding the byte from two positions further
+// on. Read a word and pick the byte out of it instead. Destinations are
+// always window buffers in RAM, so only the source side needs this.
+static inline u8 SrcPixel(const u8 *p)
+{
+    const u32 *word = (const u32 *)((uintptr_t)p & ~(uintptr_t)3);
+    return (u8)(*word >> ((3 - ((uintptr_t)p & 3)) * 8));
+}
+#else
+#define SrcPixel(p) (*(p))
+#endif
+
 void BlitBitmapRect4BitWithoutColorKey(const struct Bitmap *src, struct Bitmap *dst, u16 srcX, u16 srcY, u16 dstX, u16 dstY, u16 width, u16 height)
 {
     BlitBitmapRect4Bit(src, dst, srcX, srcY, dstX, dstY, width, height, 0xFF);
@@ -41,7 +56,7 @@ void BlitBitmapRect4Bit(const struct Bitmap *src, struct Bitmap *dst, u16 srcX, 
             {
                 pixelsSrc = src->pixels + ((loopSrcX >> 1) & 3) + ((loopSrcX >> 3) << 5) + (((loopSrcY >> 3) * multiplierSrcY) << 5) + ((u32)(loopSrcY << 0x1d) >> 0x1B);
                 pixelsDst = dst->pixels + ((loopDstX >> 1) & 3) + ((loopDstX >> 3) << 5) + (((loopDstY >> 3) * multiplierDstY) << 5) + ((u32)(loopDstY << 0x1d) >> 0x1B);
-                toOrr = ((*pixelsSrc >> ((loopSrcX & 1) << 2)) & 0xF);
+                toOrr = ((SrcPixel(pixelsSrc) >> ((loopSrcX & 1) << 2)) & 0xF);
                 toShift = ((loopDstX & 1) << 2);
                 toOrr <<= toShift;
                 toAnd = 0xF0 >> (toShift);
@@ -57,7 +72,7 @@ void BlitBitmapRect4Bit(const struct Bitmap *src, struct Bitmap *dst, u16 srcX, 
             {
                 pixelsSrc = src->pixels + ((loopSrcX >> 1) & 3) + ((loopSrcX >> 3) << 5) + (((loopSrcY >> 3) * multiplierSrcY) << 5) + ((u32)(loopSrcY << 0x1d) >> 0x1B);
                 pixelsDst = dst->pixels + ((loopDstX >> 1) & 3) + ((loopDstX >> 3) << 5) + (((loopDstY >> 3) * multiplierDstY) << 5) + ((u32)(loopDstY << 0x1d) >> 0x1B);
-                toOrr = ((*pixelsSrc >> ((loopSrcX & 1) << 2)) & 0xF);
+                toOrr = ((SrcPixel(pixelsSrc) >> ((loopSrcX & 1) << 2)) & 0xF);
                 if (toOrr != colorKey)
                 {
                     toShift = ((loopDstX & 1) << 2);
@@ -142,12 +157,12 @@ void BlitBitmapRect4BitTo8Bit(const struct Bitmap *src, struct Bitmap *dst, u16 
                 pixelsDst = dst->pixels + (loopDstX & 7) + ((loopDstX >> 3) << 6) + (((loopDstY >> 3) * multiplierDstY) << 6) + ((u32)(loopDstY << 0x1d) >> 0x1a);
                 if (loopSrcX & 1)
                 {
-                    *pixelsDst = palOffsetBits + (*pixelsSrc >> 4);
+                    *pixelsDst = palOffsetBits + (SrcPixel(pixelsSrc) >> 4);
                 }
                 else
                 {
                     pixelsSrc = src->pixels + ((loopSrcX >> 1) & 3) + ((loopSrcX >> 3) << 5) + (((loopSrcY >> 3) * multiplierSrcY) << 5) + ((u32)(loopSrcY << 0x1d) >> 0x1b);
-                    *pixelsDst = palOffsetBits + (*pixelsSrc & 0xF);
+                    *pixelsDst = palOffsetBits + (SrcPixel(pixelsSrc) & 0xF);
                 }
             }
         }
@@ -161,19 +176,19 @@ void BlitBitmapRect4BitTo8Bit(const struct Bitmap *src, struct Bitmap *dst, u16 
             {
                 if (loopSrcX & 1)
                 {
-                    if ((*pixelsSrc & 0xF0) != colorKeyBits)
+                    if ((SrcPixel(pixelsSrc) & 0xF0) != colorKeyBits)
                     {
                         pixelsDst = dst->pixels + (loopDstX & 7) + ((loopDstX >> 3) << 6) + (((loopDstY >> 3) * multiplierDstY) << 6) + ((u32)(loopDstY << 0x1d) >> 0x1a);
-                        *pixelsDst = palOffsetBits + (*pixelsSrc >> 4);
+                        *pixelsDst = palOffsetBits + (SrcPixel(pixelsSrc) >> 4);
                     }
                 }
                 else
                 {
                     pixelsSrc = src->pixels + ((loopSrcX >> 1) & 3) + ((loopSrcX >> 3) << 5) + (((loopSrcY >> 3) * multiplierSrcY) << 5) + ((u32)(loopSrcY << 0x1d) >> 0x1b);
-                    if ((*pixelsSrc & 0xF) != colorKey)
+                    if ((SrcPixel(pixelsSrc) & 0xF) != colorKey)
                     {
                         pixelsDst = dst->pixels + (loopDstX & 7) + ((loopDstX >> 3) << 6) + (((loopDstY >> 3) * multiplierDstY) << 6) + ((u32)(loopDstY << 0x1d) >> 0x1a);
-                        *pixelsDst = palOffsetBits + (*pixelsSrc & 0xF);
+                        *pixelsDst = palOffsetBits + (SrcPixel(pixelsSrc) & 0xF);
                     }
                 }
             }

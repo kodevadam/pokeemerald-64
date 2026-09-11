@@ -225,12 +225,17 @@ void N64_CompositeSprites(void)
                 /* Compute tile pixel coordinates */
                 int pixX, pixY;
                 if (affineMode != 0) {
-                    /* Affine: transform (sx,sy) relative to sprite centre */
-                    s32 cx = bbW / 2, cy = bbH / 2;
-                    s32 tx = sx - cx, ty = sy - cy;
+                    /* Affine: (sx,sy) is measured from the centre of the
+                     * bounding box, but the texture coordinate it maps to is
+                     * measured from the centre of the *sprite*. Those differ
+                     * for a double-size sprite, where the box is twice the
+                     * sprite -- using the box's half-size for both shifted
+                     * the sampled region half a sprite over, which is what
+                     * left the intro's GAME FREAK letters in pieces. */
+                    s32 tx = sx - bbW / 2, ty = sy - bbH / 2;
                     /* Apply inverse affine matrix (pa,pb,pc,pd in 8.8 f-p) */
-                    s32 fpX = (s32)pa * tx + (s32)pb * ty + (cx << 8);
-                    s32 fpY = (s32)pc * tx + (s32)pd * ty + (cy << 8);
+                    s32 fpX = (s32)pa * tx + (s32)pb * ty + ((spWidth  / 2) << 8);
+                    s32 fpY = (s32)pc * tx + (s32)pd * ty + ((spHeight / 2) << 8);
                     pixX = (int)(fpX >> 8);
                     pixY = (int)(fpY >> 8);
                 } else {

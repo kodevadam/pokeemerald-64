@@ -578,9 +578,16 @@ void N64_CompositeFrame(void)
                 }
             }
 
-            /* Apply colour effects */
+            /* Apply colour effects. Bit 5 of the window mask is the
+             * colour-special-effect enable: a window can exempt what it
+             * covers from the blend or brightness pass. The main menu
+             * relies on that to darken everything except the highlighted
+             * entry, which without this came out uniformly grey. */
             u16 finalColour = topColour;
-            if (blendEff == 1 && gotTop &&
+            if (!(winMask & 0x20))
+            {
+                /* effect disabled here */
+            } else if (blendEff == 1 && gotTop &&
                 (tgt1Mask & (topLayer < 0 ? 0x20 : (1 << topLayer))) &&
                 (tgt2Mask & (botLayer < 0 ? 0x20 : (1 << botLayer))))
             {

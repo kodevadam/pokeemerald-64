@@ -95,6 +95,17 @@ static void SwapPaletteEndian(u16 *pltt, u16 size)
     for (u16 i = 0; i < size / 2; i++)
         pltt[i] = (u16)((pltt[i] >> 8) | (pltt[i] << 8));
 }
+
+// Same conversion, for the handful of places that copy palette assets into
+// the palette buffers directly rather than through LoadPalette() -- the
+// intro's letter colour fade, the fog palette, the pyramid floor palettes.
+// Without it those land byte-swapped and come out the wrong colour entirely
+// (the GAME FREAK letters faded through orange and pink instead of blue).
+void CpuCopyPalette16(const void *src, void *dest, u16 size)
+{
+    CpuCopy16(src, dest, size);
+    SwapPaletteEndian(dest, size);
+}
 #endif
 
 void LoadCompressedPalette(const u32 *src, u16 offset, u16 size)
@@ -119,6 +130,20 @@ void LoadPalette(const void *src, u16 offset, u16 size)
     CpuCopy16(src, &gPlttBufferFaded[offset], size);
 #endif
 }
+
+#if defined(N64_PORT) && N64_PORT
+// LoadPalette() expects GBA-format palette data and converts it to native
+// order on the way in. Values the game produced itself -- an RGB() literal,
+// a slice copied back out of the palette buffers -- are already native and
+// must not be converted a second time. Passing RGB_WHITE through
+// LoadPalette() is what turned the main menu's window fill grey and its
+// text dark red.
+void LoadPaletteNative(const void *src, u16 offset, u16 size)
+{
+    CpuCopy16(src, &gPlttBufferUnfaded[offset], size);
+    CpuCopy16(src, &gPlttBufferFaded[offset], size);
+}
+#endif
 
 void FillPalette(u16 value, u16 offset, u16 size)
 {

@@ -352,33 +352,17 @@ void N64_DmaSet(int dmaNum, const void *src, void *dst, u32 control)
     int fixed  = (ctrl & DMA_SRC_FIXED) != 0;
     u32 bytes  = count * (is32 ? 4 : 2);
 
-    if (dmaNum == 3) {
-        /* Queue for VBlank processing.
-         *
-         * DmaFill16/32 (the DMA_SRC_FIXED case) pass a pointer to a
-         * stack-local temporary that only exists for the lifetime of the
-         * macro's do{}while(0) block -- it goes out of scope the instant
-         * this call returns, long before ProcessDma3Requests() runs it
-         * at the next VBlank.  Storing that pointer for later use is a
-         * dangling-pointer bug: by VBlank time the stack slot has been
-         * reused by whatever ran since (often all three of a case's
-         * DmaFill calls alias the same slot), so the "fill value" read
-         * back is whatever garbage happens to be on the stack rather
-         * than the value the caller asked for -- which was filling all
-         * of VRAM/OAM/PLTT with noise instead of zero, the root cause of
-         * the long-standing screen-corruption/freeze bug.  Capture the
-         * value now, while src is still live, instead of the pointer. */
-        int next = (sDma3Head + 1) % DMA3_QUEUE_SIZE;
-        if (next != sDma3Tail) {
-            sDma3Queue[sDma3Head].src     = src;
-            sDma3Queue[sDma3Head].dst     = dst;
-            sDma3Queue[sDma3Head].control = control;
-            if (fixed)
-                sDma3Queue[sDma3Head].fixedValue = is32 ? *(const u32 *)src : *(const u16 *)src;
-            sDma3Head = next;
-        }
-        return;
-    }
+    /* DMA3 runs immediately, exactly like DMA0-2 and like the real
+     * hardware: DmaSet() stalls the CPU until the transfer completes.
+     *
+     * This used to queue the request for the next VBlank, which inverted
+     * the order of two writes that the game expects to happen in sequence.
+     * InitMainMenu() clears all of VRAM with DmaFill16(3, ...) and then
+     * loads the window frame tiles with RequestDma3Copy(), which this port
+     * runs immediately -- so the deferred clear landed afterwards and wiped
+     * the tiles it was supposed to precede. The main menu's rounded window
+     * borders were simply missing as a result.
+     */
 
     /* Immediate execution for DMA0-2 */
     if (!(ctrl & DMA_ENABLE))
