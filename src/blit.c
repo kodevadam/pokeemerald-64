@@ -9,8 +9,8 @@
 // always window buffers in RAM, so only the source side needs this.
 static inline u8 SrcPixel(const u8 *p)
 {
-    const u32 *word = (const u32 *)((uintptr_t)p & ~(uintptr_t)3);
-    return (u8)(*word >> ((3 - ((uintptr_t)p & 3)) * 8));
+    u32 word = N64_ReadRomWord((const void *)((uintptr_t)p & ~(uintptr_t)3));
+    return (u8)(word >> ((3 - ((uintptr_t)p & 3)) * 8));
 }
 #else
 #define SrcPixel(p) (*(p))

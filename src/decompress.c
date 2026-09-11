@@ -273,7 +273,7 @@ u32 GetDecompressedDataSize(const u32 *ptr)
     // answers word-sized reads, so the header's three size bytes have to
     // come out of one word load rather than three byte loads. The bytes
     // themselves are still in the GBA's little-endian order.
-    u32 header = *ptr;
+    u32 header = N64_ReadRomWord(ptr);
     return ((header >> 16) & 0xFF) | (((header >> 8) & 0xFF) << 8) | ((header & 0xFF) << 16);
 #else
     const u8 *ptr8 = (const u8 *)ptr;

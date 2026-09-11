@@ -556,7 +556,7 @@ void DecompressGlyphTile(const void *src_, void *dest_)
 
     for (u32 i = 0; i < 4; i++)
     {
-        u32 w = *src++;
+        u32 w = N64_ReadRomWord(src++);
         u32 a = sFontHalfRowLookupTable[sFontHalfRowOffsetsRam[(w >> 24) & 0xFF]];
         u32 b = sFontHalfRowLookupTable[sFontHalfRowOffsetsRam[(w >> 16) & 0xFF]];
         u32 c = sFontHalfRowLookupTable[sFontHalfRowOffsetsRam[(w >>  8) & 0xFF]];

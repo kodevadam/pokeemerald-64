@@ -138,8 +138,7 @@ void CpuSet(const void *src, void *dst, u32 ctrl)
              * that word src's first halfword falls in. */
             uintptr_t addr = (uintptr_t)src;
             while (count--) {
-                const u32 *alignedSrc = (const u32 *)(addr & ~(uintptr_t)3);
-                u32 w = *alignedSrc;
+                u32 w = N64_ReadRomWord((const void *)(addr & ~(uintptr_t)3));
                 *d++ = (addr & 2) ? (u16)(w & 0xFFFFu) : (u16)(w >> 16);
                 addr += 2;
             }
@@ -209,7 +208,7 @@ static inline void ByteReaderInit(struct ByteReader *r, const u8 *src)
 {
     r->word = (const u32 *)((uintptr_t)src & ~(uintptr_t)3);
     r->pos  = (uintptr_t)src & 3;
-    r->cur  = *r->word;
+    r->cur  = N64_ReadRomWord(r->word);
 }
 
 static inline u8 ByteReaderNext(struct ByteReader *r)
@@ -218,7 +217,7 @@ static inline u8 ByteReaderNext(struct ByteReader *r)
     if (++r->pos == 4)
     {
         r->pos = 0;
-        r->cur = *++r->word;
+        r->cur = N64_ReadRomWord(++r->word);
     }
     return b;
 }

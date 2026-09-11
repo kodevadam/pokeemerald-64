@@ -53,7 +53,7 @@ __n64_boot:
      * VI registers at 0xA4400000 (KSEG1 uncached).
      * --------------------------------------------------------------------- */
     li      $t0, 0xA4400000         /* VI base (KSEG1 uncached)              */
-    li      $t1, 0x00003202         /* VI_STATUS: 16bpp RGBA5551             */
+    li      $t1, 0x00003302         /* VI_STATUS: 16bpp RGBA5551, point-sampled */
     sw      $t1, 0x00($t0)          /* VI_STATUS                              */
     li      $t1, 0x007B0000         /* VI_ORIGIN: physical 0x7B0000           */
     sw      $t1, 0x04($t0)          /* VI_ORIGIN                              */

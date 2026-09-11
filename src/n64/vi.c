@@ -62,8 +62,16 @@ void N64_InitVI(void)
     memset((void *)((uintptr_t)__fb0_start | 0x20000000u), 0, N64_VI_WIDTH * N64_VI_HEIGHT * sizeof(u16));
     memset((void *)((uintptr_t)__fb1_start | 0x20000000u), 0, N64_VI_WIDTH * N64_VI_HEIGHT * sizeof(u16));
 
-    /* VI_STATUS: 16-bit colour, no gamma, no divot, no AA, progressive */
-    VI_WR(VI_STATUS_REG,  0x00003202);
+    /* VI_STATUS: 16-bit colour, no gamma, no divot, progressive.
+     *
+     * Bits 9:8 are the AA/resample mode, and this used to be 2 -- "resample
+     * only", which still runs the VI's horizontal resampling filter and
+     * averages each output pixel with its neighbour. On a 3D game that
+     * softens edges harmlessly; on a 240x160 2D image it washes out every
+     * one-pixel feature, which read as text losing strokes -- a capital O
+     * came out looking like a C. Mode 3 point-samples instead, so what the
+     * compositor writes is what reaches the screen. */
+    VI_WR(VI_STATUS_REG,  0x00003302);
 
     /* VI_ORIGIN: physical RDRAM address of front framebuffer */
     VI_WR(VI_ORIGIN_REG,  (u32)((uintptr_t)__fb0_start & 0x00FFFFFF));

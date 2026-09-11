@@ -38,6 +38,25 @@
  * The macros use the same numeric values as GBA so that all BG_CHAR_ADDR()
  * etc. arithmetic still produces correct offsets into the VRAM buffer.
  * --------------------------------------------------------------------- */
+/* -----------------------------------------------------------------------
+ * Reading data that lives in cartridge ROM
+ *
+ * The PI bus only answers word-sized reads: a byte or halfword load from
+ * cartridge space comes back holding data from the wrong offset. So every
+ * ROM reader in this port loads a whole word and picks the bytes out of it.
+ *
+ * That load has to be volatile. Given a plain load, GCC cheerfully turns an
+ * extraction like `(w >> 8) & 0xFF` back into an `lbu` at offset 2 -- which
+ * is exactly the access that does not work, and it reintroduces the bug the
+ * word read was there to avoid. It showed up as text quietly losing strokes
+ * (a capital O rendering as a C) and as compressed data decoding wrong. A
+ * volatile read cannot be duplicated or narrowed, so the word stays a word.
+ * --------------------------------------------------------------------- */
+static inline u32 N64_ReadRomWord(const void *p)
+{
+    return *(const volatile u32 *)p;
+}
+
 extern void *__n64_pltt_buf;   /* points to __sw_palette_start in RDRAM */
 extern void *__n64_vram_buf;   /* points to __sw_vram_start  in RDRAM   */
 extern void *__n64_oam_buf;    /* points to __sw_oam_start   in RDRAM   */

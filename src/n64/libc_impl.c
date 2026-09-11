@@ -13,6 +13,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Same as N64_ReadRomWord() in n64/defines.h -- this file is built without
+ * the game headers, so it carries its own copy. The read must be volatile:
+ * given a plain load, GCC turns the byte extractions below back into byte
+ * loads, which is precisely the access the PI bus cannot serve. */
+static inline uint32_t ReadRomWord(const void *p)
+{
+    return *(const volatile uint32_t *)p;
+}
+
 /* -----------------------------------------------------------------------
  * Memory functions
  * --------------------------------------------------------------------- */
@@ -33,8 +42,7 @@ void *memcpy(void *dst, const void *src, size_t n)
     uintptr_t addr = (uintptr_t)src;
     size_t i = 0;
     while (i < n) {
-        const uint32_t *alignedSrc = (const uint32_t *)(addr & ~(uintptr_t)3);
-        uint32_t w = *alignedSrc;
+        uint32_t w = ReadRomWord((const void *)(addr & ~(uintptr_t)3));
         int byteOffset = (int)(addr & 3);
         size_t bytesFromThisWord = (size_t)(4 - byteOffset);
         if (bytesFromThisWord > n - i)
