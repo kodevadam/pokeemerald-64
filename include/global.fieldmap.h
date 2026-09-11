@@ -1,6 +1,20 @@
 #ifndef GUARD_GLOBAL_FIELDMAP_H
 #define GUARD_GLOBAL_FIELDMAP_H
 
+// The map grid blocks (data/layouts/*/map.bin, border.bin) and the tileset
+// metatile/attribute tables (data/tilesets/*/metatiles.bin,
+// metatile_attributes.bin) are embedded byte-for-byte from files that store
+// their u16 entries little-endian.  On this big-endian target a plain u16 load
+// therefore sees the two halves the wrong way round, so every read of that
+// data has to put them back.  Writes go to gBackupMapLayout / the BG tilemap
+// buffers, which hold native values, so only the reads from the embedded
+// tables need this.
+#if defined(N64_PORT) && N64_PORT
+#define MAP_ASSET_16(v) ((u16)__builtin_bswap16((u16)(v)))
+#else
+#define MAP_ASSET_16(v) ((u16)(v))
+#endif
+
 // Masks/shifts for blocks in the map grid
 // Map grid blocks consist of a 10 bit metatile id, a 2 bit collision value, and a 4 bit elevation value
 // This is the data stored in each data/layouts/*/map.bin file

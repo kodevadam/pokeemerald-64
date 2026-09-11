@@ -307,7 +307,7 @@ static void FindMetatileIdMapCoords(s16 *x, s16 *y, u16 metatileId)
     {
         for (i = 0; i < mapLayout->width; i++)
         {
-            if ((mapLayout->map[j * mapLayout->width + i] & MAPGRID_METATILE_ID_MASK) == metatileId)
+            if ((MAP_ASSET_16(mapLayout->map[j * mapLayout->width + i]) & MAPGRID_METATILE_ID_MASK) == metatileId)
             {
                 *x = i;
                 *y = j;

@@ -762,12 +762,26 @@ bool8 FieldEffectCmd_loadfadedpal_callnative(u8 **script, u32 *val)
     return TRUE;
 }
 
+// Field effect scripts live in data/field_effect_scripts.s, so the assembler
+// lays their operands down in the build target's byte order -- big-endian
+// here, not the GBA's little-endian. Reading them the GBA way reverses every
+// pointer the script carries, which is fatal: FieldEffectScript_CallNative
+// would jump to a reversed address, and FieldEffectScript_LoadTiles would
+// dereference one. DoShadowFieldEffect(), part of every jump movement, was
+// hanging the game the first time the player jumped off the moving truck.
 u32 FieldEffectScript_ReadWord(u8 **script)
 {
+#if defined(N64_PORT) && N64_PORT
+    return ((*script)[0] << 24)
+         + ((*script)[1] << 16)
+         + ((*script)[2] << 8)
+         + (*script)[3];
+#else
     return (*script)[0]
          + ((*script)[1] << 8)
          + ((*script)[2] << 16)
          + ((*script)[3] << 24);
+#endif
 }
 
 void FieldEffectScript_LoadTiles(u8 **script)

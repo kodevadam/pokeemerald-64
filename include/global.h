@@ -113,6 +113,24 @@
 // as these below. Because of this, there is a theory (Two Team Theory) that states that these
 // programming projects had more than 1 "programming team" which utilized different macros for
 // each of the files that were worked on.
+// These pick multi-byte values out of assembler-generated tables -- map
+// script headers, battle scripts, and so on. The assembler lays those down in
+// the build target's byte order, so on N64 they are big-endian rather than
+// the GBA's little-endian, and the bytes have to be put back together the
+// other way round. Reading a map script header the GBA way yields a pointer
+// with its bytes reversed, which is what hung the overworld load.
+#if defined(N64_PORT) && N64_PORT
+#define T1_READ_8(ptr)  ((ptr)[0])
+#define T1_READ_16(ptr) (((ptr)[0] << 8) | (ptr)[1])
+#define T1_READ_32(ptr) (((ptr)[0] << 24) | ((ptr)[1] << 16) | ((ptr)[2] << 8) | (ptr)[3])
+#define T1_READ_PTR(ptr) (u8 *) T1_READ_32(ptr)
+
+// T2_READ_8 is a duplicate to remain consistent with each group.
+#define T2_READ_8(ptr)  ((ptr)[0])
+#define T2_READ_16(ptr) (((ptr)[0] << 8) + (ptr)[1])
+#define T2_READ_32(ptr) (((ptr)[0] << 24) + ((ptr)[1] << 16) + ((ptr)[2] << 8) + (ptr)[3])
+#define T2_READ_PTR(ptr) (void *) T2_READ_32(ptr)
+#else
 #define T1_READ_8(ptr)  ((ptr)[0])
 #define T1_READ_16(ptr) ((ptr)[0] | ((ptr)[1] << 8))
 #define T1_READ_32(ptr) ((ptr)[0] | ((ptr)[1] << 8) | ((ptr)[2] << 16) | ((ptr)[3] << 24))
@@ -123,6 +141,7 @@
 #define T2_READ_16(ptr) ((ptr)[0] + ((ptr)[1] << 8))
 #define T2_READ_32(ptr) ((ptr)[0] + ((ptr)[1] << 8) + ((ptr)[2] << 16) + ((ptr)[3] << 24))
 #define T2_READ_PTR(ptr) (void *) T2_READ_32(ptr)
+#endif
 
 #define PACK(data, shift, mask)   ( ((data) << (shift)) & (mask) )
 #define UNPACK(data, shift, mask) ( ((data) & (mask)) >> (shift) )

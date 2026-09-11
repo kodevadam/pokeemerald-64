@@ -7,6 +7,7 @@
 #include "graphics.h"
 #include "main.h"
 #include "menu.h"
+#include "decompress.h"
 #include "menu_helpers.h"
 #include "palette.h"
 #include "pokedex.h"
@@ -1821,6 +1822,13 @@ void task_free_buf_after_copying_tile_data_to_vram(u8 taskId)
 void *malloc_and_decompress(const void *src, u32 *size)
 {
     void *ptr;
+#if defined(N64_PORT) && N64_PORT
+    // Assembling the LZ77 header's size field out of individual bytes does
+    // not work here: the data sits in cartridge ROM, where the PI bus only
+    // answers word-sized reads, and the byte order is the GBA's, not this
+    // target's. GetDecompressedDataSize() handles both.
+    *size = GetDecompressedDataSize(src);
+#else
     u8 *sizeAsBytes = (u8 *)size;
     u8 *srcAsBytes = (u8 *)src;
 
@@ -1828,6 +1836,7 @@ void *malloc_and_decompress(const void *src, u32 *size)
     sizeAsBytes[1] = srcAsBytes[2];
     sizeAsBytes[2] = srcAsBytes[3];
     sizeAsBytes[3] = 0;
+#endif
 
     ptr = Alloc(*size);
     if (ptr)

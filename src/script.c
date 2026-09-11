@@ -163,11 +163,24 @@ void ScriptReturn(struct ScriptContext *ctx)
     ctx->scriptPtr = ScriptPop(ctx);
 }
 
+// Script operands are laid down by the assembler in the build target's byte
+// order, so on N64 they are big-endian rather than the GBA's little-endian.
+// Reading them the GBA way byte-swaps every 16- and 32-bit operand: flag and
+// var IDs come out as large numbers, and -- fatally -- the pointer in a
+// `call` or `goto` lands somewhere outside the ROM. The very first script a
+// new game runs, EventScript_ResetAllMapFlags, ends by calling
+// EventScript_ResetAllBerries, and that call was jumping into nowhere.
 u16 ScriptReadHalfword(struct ScriptContext *ctx)
 {
+#if defined(N64_PORT) && N64_PORT
+    u16 value = *(ctx->scriptPtr++) << 8;
+    value |= *(ctx->scriptPtr++);
+    return value;
+#else
     u16 value = *(ctx->scriptPtr++);
     value |= *(ctx->scriptPtr++) << 8;
     return value;
+#endif
 }
 
 u32 ScriptReadWord(struct ScriptContext *ctx)
@@ -176,7 +189,11 @@ u32 ScriptReadWord(struct ScriptContext *ctx)
     u32 value1 = *(ctx->scriptPtr++);
     u32 value2 = *(ctx->scriptPtr++);
     u32 value3 = *(ctx->scriptPtr++);
+#if defined(N64_PORT) && N64_PORT
+    return (((((value0 << 8) + value1) << 8) + value2) << 8) + value3;
+#else
     return (((((value3 << 8) + value2) << 8) + value1) << 8) + value0;
+#endif
 }
 
 void LockPlayerFieldControls(void)

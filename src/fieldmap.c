@@ -56,12 +56,26 @@ static bool8 IsCoordInIncomingConnectingMap(int coord, int srcMax, int destMax, 
     i = (x + 1) & 1;                                                                               \
     i += ((y + 1) & 1) * 2;                                                                        \
                                                                                                    \
-    block = gMapHeader.mapLayout->border[i] | MAPGRID_IMPASSABLE;                                  \
+    block = MAP_ASSET_16(gMapHeader.mapLayout->border[i]) | MAPGRID_IMPASSABLE;                    \
 })
 
 #define AreCoordsWithinMapGridBounds(x, y) (x >= 0 && x < gBackupMapLayout.width && y >= 0 && y < gBackupMapLayout.height)
 
 #define GetMapGridBlockAt(x, y) (AreCoordsWithinMapGridBounds(x, y) ? gBackupMapLayout.map[x + gBackupMapLayout.width * y] : GetBorderBlockAt(x, y))
+
+// Copies `count` blocks out of an embedded map layout into the map grid,
+// converting each one to a native u16 on the way (see MAP_ASSET_16).
+static void CopyMapBlocks(u16 *dest, const u16 *src, int count)
+{
+#if defined(N64_PORT) && N64_PORT
+    int i;
+
+    for (i = 0; i < count; i++)
+        dest[i] = MAP_ASSET_16(src[i]);
+#else
+    CpuCopy16(src, dest, count * 2);
+#endif
+}
 
 const struct MapHeader *const GetMapHeaderFromConnection(const struct MapConnection *connection)
 {
@@ -124,7 +138,7 @@ static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
     dest += gBackupMapLayout.width * 7 + MAP_OFFSET;
     for (y = 0; y < height; y++)
     {
-        CpuCopy16(map, dest, width * 2);
+        CopyMapBlocks(dest, map, width);
         dest += width + MAP_OFFSET_W;
         map += width;
     }
@@ -181,7 +195,7 @@ static void FillConnection(int x, int y, struct MapHeader const *connectedMapHea
 
     for (i = 0; i < height; i++)
     {
-        CpuCopy16(src, dest, width * 2);
+        CopyMapBlocks(dest, src, width);
         dest += gBackupMapLayout.width;
         src += mapWidth;
     }
@@ -412,12 +426,12 @@ u16 GetMetatileAttributesById(u16 metatile)
     if (metatile < NUM_METATILES_IN_PRIMARY)
     {
         attributes = gMapHeader.mapLayout->primaryTileset->metatileAttributes;
-        return attributes[metatile];
+        return MAP_ASSET_16(attributes[metatile]);
     }
     else if (metatile < NUM_METATILES_TOTAL)
     {
         attributes = gMapHeader.mapLayout->secondaryTileset->metatileAttributes;
-        return attributes[metatile - NUM_METATILES_IN_PRIMARY];
+        return MAP_ASSET_16(attributes[metatile - NUM_METATILES_IN_PRIMARY]);
     }
     else
     {

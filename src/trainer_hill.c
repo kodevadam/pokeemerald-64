@@ -715,7 +715,7 @@ void GenerateTrainerHillFloorLayout(u16 *mapArg)
     for (y = 0; y < HILL_FLOOR_HEIGHT_MARGIN; y++)
     {
         for (x = 0; x < HILL_FLOOR_WIDTH; x++)
-            dst[x] = src[x];
+            dst[x] = MAP_ASSET_16(src[x]);
         dst += 31;
         src += 16;
     }

@@ -1546,9 +1546,11 @@ void GenerateBattlePyramidFloorLayout(u16 *backupMapData, bool8 setPlayerPositio
         {
             for (x = 0; x < mapLayout->width; x++)
             {
-                if ((layoutMap[x] & MAPGRID_METATILE_ID_MASK) != METATILE_BattlePyramid_Exit)
+                u16 block = MAP_ASSET_16(layoutMap[x]);
+
+                if ((block & MAPGRID_METATILE_ID_MASK) != METATILE_BattlePyramid_Exit)
                 {
-                    map[x] = layoutMap[x];
+                    map[x] = block;
                 }
                 else if (i != exitSquareId)
                 {
@@ -1558,11 +1560,11 @@ void GenerateBattlePyramidFloorLayout(u16 *backupMapData, bool8 setPlayerPositio
                         gSaveBlock1Ptr->pos.y = (mapLayout->height * (i / PYRAMID_FLOOR_SQUARES_WIDE)) + y;
                     }
                     // Copy the elevation and collision, but overwrite the metatile ID
-                    map[x] = (layoutMap[x] & (MAPGRID_ELEVATION_MASK | MAPGRID_COLLISION_MASK)) | METATILE_BattlePyramid_Floor;
+                    map[x] = (block & (MAPGRID_ELEVATION_MASK | MAPGRID_COLLISION_MASK)) | METATILE_BattlePyramid_Floor;
                 }
                 else
                 {
-                    map[x] = layoutMap[x];
+                    map[x] = block;
                 }
             }
             map += MAP_OFFSET_W + (mapLayout->width * PYRAMID_FLOOR_SQUARES_WIDE);

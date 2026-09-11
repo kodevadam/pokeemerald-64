@@ -239,7 +239,22 @@ static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x,
         metatiles = mapLayout->secondaryTileset->metatiles;
         metatileId -= NUM_METATILES_IN_PRIMARY;
     }
+#if defined(N64_PORT) && N64_PORT
+    // The tileset's metatile table is embedded little-endian, but the BG
+    // tilemap buffers DrawMetatile writes into hold native entries.
+    {
+        const u16 *src = metatiles + metatileId * NUM_TILES_PER_METATILE;
+        u16 tiles[NUM_TILES_PER_METATILE];
+        u32 i;
+
+        for (i = 0; i < NUM_TILES_PER_METATILE; i++)
+            tiles[i] = MAP_ASSET_16(src[i]);
+
+        DrawMetatile(MapGridGetMetatileLayerTypeAt(x, y), tiles, offset);
+    }
+#else
     DrawMetatile(MapGridGetMetatileLayerTypeAt(x, y), metatiles + metatileId * NUM_TILES_PER_METATILE, offset);
+#endif
 }
 
 static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
