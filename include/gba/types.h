@@ -31,8 +31,29 @@ typedef vu8  vbool8;
 typedef vu16 vbool16;
 typedef vu32 vbool32;
 
+/* GCC fills bitfields starting from the most significant bit of the
+ * storage unit on big-endian targets and from the least significant bit
+ * on little-endian ones. The N64 port builds big-endian, so every
+ * hardware-format bitfield struct here has to be listed in reverse
+ * there to land on the same bits as the GBA layout -- which is what the
+ * software compositor (and all the code manipulating these values with
+ * plain shifts and masks) reads them back as. */
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define GBA_BITFIELDS_BIG_ENDIAN 1
+#endif
+
 struct BgCnt
 {
+#ifdef GBA_BITFIELDS_BIG_ENDIAN
+    u16 screenSize:2;
+    u16 areaOverflowMode:1;
+    u16 screenBaseBlock:5;
+    u16 palettes:1;
+    u16 mosaic:1;
+    u16 dsCharBaseBlock:2;
+    u16 charBaseBlock:2;
+    u16 priority:2;
+#else
     u16 priority:2;
     u16 charBaseBlock:2;
     u16 dsCharBaseBlock:2;
@@ -41,18 +62,9 @@ struct BgCnt
     u16 screenBaseBlock:5;
     u16 areaOverflowMode:1;
     u16 screenSize:2;
+#endif
 };
 typedef volatile struct BgCnt vBgCnt;
-
-/* GCC fills bitfields starting from the most significant bit of the
- * storage unit on big-endian targets and from the least significant bit
- * on little-endian ones. The N64 port builds big-endian, so every
- * hardware-format bitfield struct below has to be listed in reverse
- * there to land on the same bits the GBA layout (and the code that
- * manipulates these values with plain shifts and masks) expects. */
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define GBA_BITFIELDS_BIG_ENDIAN 1
-#endif
 
 struct PlttData
 {
@@ -71,6 +83,27 @@ struct PlttData
 
 struct OamData
 {
+#ifdef GBA_BITFIELDS_BIG_ENDIAN
+    /* Reversed per attribute halfword (see the note above). Each of the
+     * three attributes is its own u16 storage unit so that they still
+     * occupy bytes 0-1, 2-3 and 4-5 the way the hardware format -- and
+     * the sprite renderer reading them back -- requires. */
+    /*0x00*/ u16 shape:2;       // 0x40, 0x80 -> 0xC0
+             u16 bpp:1;         // 0x20
+             u16 mosaic:1;      // 0x10
+             u16 objMode:2;     // 0x4, 0x8 -> 0xC
+             u16 affineMode:2;  // 0x1, 0x2 -> 0x4
+             u16 y:8;
+
+    /*0x02*/ u16 size:2;        // 0x4000, 0x8000 -> 0xC000
+             u16 matrixNum:5;   // bits 3/4 are h-flip/v-flip if not in affine mode
+             u16 x:9;
+
+    /*0x04*/ u16 paletteNum:4;
+             u16 priority:2;    // 0x400, 0x800 -> 0xC00
+             u16 tileNum:10;    // 0x3FF
+    /*0x06*/ u16 affineParam;
+#else
     /*0x00*/ u32 y:8;
     /*0x01*/ u32 affineMode:2;  // 0x1, 0x2 -> 0x4
              u32 objMode:2;     // 0x4, 0x8 -> 0xC
@@ -86,6 +119,7 @@ struct OamData
              u16 priority:2;    // 0x400, 0x800 -> 0xC00
              u16 paletteNum:4;
     /*0x06*/ u16 affineParam;
+#endif
 };
 
 #define ST_OAM_HFLIP     0x08
