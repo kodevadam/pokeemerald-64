@@ -127,8 +127,22 @@ void CpuSet(const void *src, void *dst, u32 ctrl)
             u16 val = *(const u16 *)src;
             while (count--) *d++ = val;
         } else {
-            const u16 *s = (const u16 *)src;
-            while (count--) *d++ = *s++;
+            /* Halfword-sized reads from ROM (.rodata/PI-bus, e.g. every
+             * INCBIN_U16 palette) are just as unreliable as the byte
+             * reads fixed in lz77_decomp -- CpuCopy16 straight from a
+             * palette array was silently corrupting colors.  u16[]
+             * arrays are only guaranteed 2-byte alignment, not 4, so we
+             * can't just cast src to u32*: instead, always read the
+             * containing 4-byte-aligned word (a reliable access) and
+             * shift out the half we need, regardless of which half of
+             * that word src's first halfword falls in. */
+            uintptr_t addr = (uintptr_t)src;
+            while (count--) {
+                const u32 *alignedSrc = (const u32 *)(addr & ~(uintptr_t)3);
+                u32 w = *alignedSrc;
+                *d++ = (addr & 2) ? (u16)(w & 0xFFFFu) : (u16)(w >> 16);
+                addr += 2;
+            }
         }
     }
 }

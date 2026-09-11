@@ -18,9 +18,32 @@
  * --------------------------------------------------------------------- */
 void *memcpy(void *dst, const void *src, size_t n)
 {
-    uint8_t       *d = (uint8_t *)dst;
-    const uint8_t *s = (const uint8_t *)src;
-    while (n--) *d++ = *s++;
+    /* Byte-granularity reads from ROM (.rodata, a KSEG1 pointer straight
+     * onto the cartridge's PI bus) are unreliable -- the PI bus doesn't
+     * support sub-word CPU accesses and silently returns the wrong byte
+     * a large fraction of the time (see bios.c's lz77_decomp for the
+     * full story; that was the root cause of the game's tile/tilemap
+     * corruption). memcpy() is used both directly and via DmaCopy16/32,
+     * so a naive byte-at-a-time loop here corrupts anything copied
+     * straight from a ROM asset. Fetch the containing 4-byte-aligned
+     * word instead (always a reliable access, and just as correct for
+     * ordinary RAM sources) and extract however many of its bytes are
+     * needed before advancing to the next one. */
+    uint8_t *d = (uint8_t *)dst;
+    uintptr_t addr = (uintptr_t)src;
+    size_t i = 0;
+    while (i < n) {
+        const uint32_t *alignedSrc = (const uint32_t *)(addr & ~(uintptr_t)3);
+        uint32_t w = *alignedSrc;
+        int byteOffset = (int)(addr & 3);
+        size_t bytesFromThisWord = (size_t)(4 - byteOffset);
+        if (bytesFromThisWord > n - i)
+            bytesFromThisWord = n - i;
+        for (size_t j = 0; j < bytesFromThisWord; j++)
+            d[i + j] = (uint8_t)(w >> (24 - (byteOffset + (int)j) * 8));
+        i += bytesFromThisWord;
+        addr += bytesFromThisWord;
+    }
     return dst;
 }
 
@@ -29,8 +52,13 @@ void *memmove(void *dst, const void *src, size_t n)
     uint8_t       *d = (uint8_t *)dst;
     const uint8_t *s = (const uint8_t *)src;
     if (d < s) {
-        while (n--) *d++ = *s++;
+        /* Same non-overlapping shape as memcpy -- src may be ROM, so
+         * route it through the same word-read/byte-extract path. */
+        memcpy(dst, src, n);
     } else if (d > s) {
+        /* Overlapping and copying backward: dst and src must be in the
+         * same buffer (ROM can't overlap a RAM destination), so src is
+         * always RAM here and plain byte access is fine. */
         d += n; s += n;
         while (n--) *--d = *--s;
     }
