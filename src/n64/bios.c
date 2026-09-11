@@ -166,8 +166,33 @@ void CpuFastSet(const void *src, void *dst, u32 ctrl)
  *         byte 1: disp & 0xFF
  *         disp is offset backwards from current output position (1-based)
  * --------------------------------------------------------------------- */
+/* Compressed LZ77/RL assets in this game top out around 9 KB (the largest
+ * is a ~8.9 KB tileset); 16 KB gives headroom for anything else. */
+#define LZ_STAGING_SIZE 0x4000
+static u32 sLzStaging[LZ_STAGING_SIZE / 4];
+
 static void lz77_decomp(const u8 *src, u8 *dst)
 {
+    /* Compressed source data lives in ROM (ID .rodata is never copied to
+     * RDRAM -- see n64.ld), so src is a KSEG1 pointer straight onto the
+     * cartridge's PI bus.  The PI bus does not support sub-word CPU
+     * accesses: reading it one byte at a time (as this function used to,
+     * matching the original GBA algorithm exactly) silently returns the
+     * wrong byte roughly half the time, since the bus is really only
+     * word-addressable.  That was the root cause of the tile/tilemap
+     * corruption visible from the very first working build (copyright
+     * screen onward) -- not a bug in the LZ77 algorithm itself.
+     *
+     * Word-sized reads from ROM are reliable (this is exactly how
+     * crt0.s's boot-time .text/.data copy already reads ROM).  So stage
+     * the whole compressed block into RDRAM with a word copy first, and
+     * do the actual byte-oriented LZ77 decoding out of that RDRAM copy,
+     * where byte access has no such restriction. */
+    const u32 *srcWords = (const u32 *)src;
+    for (u32 i = 0; i < LZ_STAGING_SIZE / 4; i++)
+        sLzStaging[i] = srcWords[i];
+    src = (const u8 *)sLzStaging;
+
     /* Skip the 4-byte header */
     u32 decompSize = ((u32)src[1]) | ((u32)src[2] << 8) | ((u32)src[3] << 16);
     src += 4;
@@ -231,6 +256,14 @@ void LZ77UnCompVram(const void *src, void *dst)
  * --------------------------------------------------------------------- */
 static void rl_decomp(const u8 *src, u8 *dst)
 {
+    /* Same fix as lz77_decomp: stage the ROM-resident compressed source
+     * into RDRAM via word reads first -- see the comment there for why
+     * byte-at-a-time reads from ROM/PI-bus space are unreliable. */
+    const u32 *srcWords = (const u32 *)src;
+    for (u32 i = 0; i < LZ_STAGING_SIZE / 4; i++)
+        sLzStaging[i] = srcWords[i];
+    src = (const u8 *)sLzStaging;
+
     u32 decompSize = ((u32)src[1]) | ((u32)src[2] << 8) | ((u32)src[3] << 16);
     src += 4;
 
