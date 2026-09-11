@@ -462,8 +462,3 @@ void ClearPokemonCrySongs(void)
 {
     CpuFill16(0, gPokemonCrySongs, MAX_POKEMON_CRIES * sizeof(struct PokemonCrySong));
 }
-
-#if defined(N64_PORT) && N64_PORT
-/* TEMPORARY DIAGNOSTIC */
-u16 N64Diag_CB2(void) { return (u16)((u32)gMain.callback2 & 0xFFFF); }
-#endif

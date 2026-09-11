@@ -231,6 +231,18 @@ SECTIONS
     } > RDRAM
 
     /* ------------------------------------------------------------------ */
+    /*  Scratch page that the low 32 KB of user space is mapped onto, so   */
+    /*  that a stray read or write through a NULL pointer lands somewhere  */
+    /*  harmless instead of taking a TLB miss. See crt0.s.                 */
+    /* ------------------------------------------------------------------ */
+    .nullpage (NOLOAD) :
+    {
+        . = ALIGN(0x4000);
+        __null_page = .;
+        . += 0x4000;
+    } > RDRAM
+
+    /* ------------------------------------------------------------------ */
     /*  Software GBA hardware buffers (all NOLOAD — zeroed at boot)        */
     /* ------------------------------------------------------------------ */
 

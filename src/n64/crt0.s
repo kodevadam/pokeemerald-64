@@ -116,6 +116,65 @@ __n64_boot:
     ori     $t0, $t0, 0x0400   /* set IM2 (bit10) — enable RCP interrupt mask */
     mtc0    $t0, $12
 
+    /* -----------------------------------------------------------------------
+     * Point the low 32 KB of user space at a scratch page.
+     *
+     * The GBA never faults on a stray pointer: a read through NULL lands in
+     * BIOS space and quietly returns junk, so code that dereferences a
+     * freed-and-nulled pointer for one more frame -- which Pokemon Emerald
+     * does, e.g. SpriteCB_Cursor running once more after the naming screen
+     * frees sNamingScreen -- simply works. On N64 the same access is a TLB
+     * miss in unmapped user space, and the refill handler has nowhere to go
+     * but a halt: the game freezes with no other symptom.
+     *
+     * Mapping virtual 0x00000000-0x00007FFF onto one scratch page restores
+     * the GBA's forgiveness. It does mean a NULL write silently scribbles on
+     * that page rather than announcing itself, which is the same trade the
+     * original hardware makes.
+     * --------------------------------------------------------------------- */
+    mtc0    $zero, $6           /* Wired = 0: all entries usable            */
+
+    /* Invalidate every entry first. EntryHi is pointed at a distinct KSEG0
+     * address each time so that no two entries can ever match the same VPN
+     * (which the CPU treats as a machine check). */
+    mtc0    $zero, $5           /* PageMask = 4 KB                          */
+    move    $t2, $zero
+.Ltlb_invalidate:
+    lui     $t0, 0x8000
+    sll     $t1, $t2, 13
+    addu    $t0, $t0, $t1
+    mtc0    $t0, $10            /* EntryHi                                  */
+    mtc0    $zero, $2           /* EntryLo0 = invalid                       */
+    mtc0    $zero, $3           /* EntryLo1 = invalid                       */
+    mtc0    $t2, $0             /* Index                                    */
+    nop
+    nop
+    tlbwi
+    nop
+    nop
+    addiu   $t2, $t2, 1
+    li      $t3, 32
+    bne     $t2, $t3, .Ltlb_invalidate
+    nop
+
+    li      $t0, 0x6000         /* PageMask = 16 KB pages                   */
+    mtc0    $t0, $5
+    mtc0    $zero, $10          /* EntryHi: VPN2 = 0, ASID 0                */
+    la      $t0, __null_page
+    li      $t1, 0x1FFFFFFF
+    and     $t0, $t0, $t1       /* physical address                          */
+    srl     $t0, $t0, 12        /* PFN                                       */
+    sll     $t0, $t0, 6         /* into EntryLo's PFN field                  */
+    ori     $t0, $t0, 0x1F      /* cached, dirty (writable), valid, global   */
+    mtc0    $t0, $2             /* EntryLo0: virtual 0x0000-0x3FFF           */
+    mtc0    $t0, $3             /* EntryLo1: virtual 0x4000-0x7FFF           */
+    mtc0    $zero, $0           /* Index = 0                                 */
+    nop
+    nop
+    tlbwi
+    nop
+    nop
+
     /* Set up stack. __stack_top is reserved by n64.ld just above .bss, so
      * it stays clear of the RDRAM window the const data is copied into. */
     la      $sp, __stack_top
@@ -413,13 +472,14 @@ __n64_boot:
     .globl  __n64_exception_vectors
 __n64_exception_vectors:
 
-/* 0x000: TLB Refill */
-    j       __n64_tlb_handler
+/* 0x000: TLB Refill — routed through the general handler so that an
+ * unexpected miss reports itself instead of halting silently. */
+    j       __n64_general_exception_handler
     nop
     .space  0x80 - 8
 
 /* 0x080: XTLB Refill (64-bit, treated same as TLB on our 32-bit build) */
-    j       __n64_tlb_handler
+    j       __n64_general_exception_handler
     nop
     .space  0x80 - 8
 

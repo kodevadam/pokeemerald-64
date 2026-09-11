@@ -148,26 +148,6 @@ void N64_RunDeferredCompositor(void)
     N64_BlitGBAFrame();
     N64_VISwapBuffers();
 
-    /* TEMPORARY DIAGNOSTIC: frame counter + current main callback */
-    {
-        extern u16 *gN64FrontBuffer;
-        extern u16 N64Diag_CB2(void);
-        static u32 sFrames;
-        u16 vals[2];
-        sFrames++;
-        vals[0] = (u16)sFrames;
-        vals[1] = N64Diag_CB2();
-        for (int k = 0; k < 2; k++) {
-            int row = 4 + k * 12;
-            for (int b = 0; b < 4; b++) {
-                u16 c = (u16)((((vals[k] >> ((3 - b) * 4)) & 0xFu) << 11) | 1);
-                for (int y = row; y < row + 10; y++)
-                    for (int x = 0; x < 14; x++)
-                        gN64FrontBuffer[y * 320 + b * 14 + x] = c;
-            }
-        }
-    }
-
     /* Update VCOUNT to match current VI line */
     extern volatile u16 gN64CurrentLine;
     _REG16(REG_OFFSET_VCOUNT) = gN64CurrentLine;

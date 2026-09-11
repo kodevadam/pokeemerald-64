@@ -223,21 +223,16 @@ static inline u8 ByteReaderNext(struct ByteReader *r)
     return b;
 }
 
-u32 gDiagLzSrc, gDiagLzDst, gDiagLzSize;
 static void lz77_decomp(const u8 *src, u8 *dst)
 {
     struct ByteReader r;
     ByteReaderInit(&r, src);
-    gDiagLzSrc = (u32)(uintptr_t)src;
-    gDiagLzDst = (u32)(uintptr_t)dst;
 
     /* Header: type byte then a 24-bit little-endian decompressed size */
     ByteReaderNext(&r);
     u32 decompSize = (u32)ByteReaderNext(&r)
                    | ((u32)ByteReaderNext(&r) << 8)
                    | ((u32)ByteReaderNext(&r) << 16);
-
-    gDiagLzSize = decompSize;
 
     u8 *out = dst;
     u8 *end = dst + decompSize;
