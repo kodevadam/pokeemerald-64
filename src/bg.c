@@ -3,6 +3,7 @@
 #include "bg.h"
 #include "dma3.h"
 #include "gpu_regs.h"
+#include "decompress.h"
 
 #define DISPCNT_ALL_BG_AND_MODE_BITS    (DISPCNT_BG_ALL_ON | 0x7)
 
@@ -871,14 +872,61 @@ void *GetBgTilemapBuffer(u8 bg)
         return sGpuBgConfigs2[bg].tilemap;
 }
 
+#if defined(N64_PORT) && N64_PORT
+// Tilemap assets ship in the GBA's little-endian byte order, but the tilemap
+// buffer holds native u16 entries -- that is how the code which builds
+// entries by hand writes them, and what CopyBgTilemapBufferToVram() converts
+// back on the way out. An asset copied or decompressed straight in has to be
+// converted here, or it reaches VRAM swapped: the naming screen's striped
+// background came out as a grid of yellow blocks. Affine tilemaps are single
+// bytes and need nothing.
+static void SwapTilemapEndian(void *tilemap, u32 sizeBytes)
+{
+    u16 *entries = tilemap;
+
+    for (u32 i = 0; i < sizeBytes / 2; i++)
+        entries[i] = (u16)((entries[i] >> 8) | (entries[i] << 8));
+}
+#endif
+
 void CopyToBgTilemapBuffer(u8 bg, const void *src, u16 mode, u16 destOffset)
 {
     if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
     {
+        void *dest = (void *)(sGpuBgConfigs2[bg].tilemap + (destOffset * 2));
+#if defined(N64_PORT) && N64_PORT
+        u32 loaded;
+
         if (mode != 0)
-            CpuCopy16(src, (void *)(sGpuBgConfigs2[bg].tilemap + (destOffset * 2)), mode);
+        {
+            CpuCopy16(src, dest, mode);
+            loaded = mode;
+        }
         else
-            LZ77UnCompWram(src, (void *)(sGpuBgConfigs2[bg].tilemap + (destOffset * 2)));
+        {
+            LZ77UnCompWram(src, dest);
+            loaded = GetDecompressedDataSize(src);
+        }
+
+        if (GetBgType(bg) == BG_TYPE_NORMAL)
+        {
+            // Never convert past the end of the buffer: a source that is not
+            // actually LZ77-compressed yields a nonsense length, and running
+            // off the end of the tilemap corrupts whatever follows it.
+            u32 limit = GetBgMetricTextMode(bg, 0) * 0x800;
+
+            if (destOffset * 2 < limit)
+            {
+                limit -= destOffset * 2;
+                SwapTilemapEndian(dest, loaded < limit ? loaded : limit);
+            }
+        }
+#else
+        if (mode != 0)
+            CpuCopy16(src, dest, mode);
+        else
+            LZ77UnCompWram(src, dest);
+#endif
     }
 }
 
@@ -952,7 +1000,14 @@ void CopyToBgTilemapBufferRect(u8 bg, const void *src, u8 destX, u8 destY, u8 wi
             {
                 for (destX16 = destX; destX16 < (destX + width); destX16++)
                 {
+#if defined(N64_PORT) && N64_PORT
+                    // Asset entries are little-endian; the buffer is native.
+                    ((u16 *)sGpuBgConfigs2[bg].tilemap)[((destY16 * 0x20) + destX16)] =
+                        (u16)((*srcCopy >> 8) | (*srcCopy << 8));
+                    srcCopy++;
+#else
                     ((u16 *)sGpuBgConfigs2[bg].tilemap)[((destY16 * 0x20) + destX16)] = *srcCopy++;
+#endif
                 }
             }
             break;

@@ -131,8 +131,14 @@ void N64_CompositeSprites(void)
     if (eva > 16) eva = 16;
     if (evb > 16) evb = 16;
 
-    /* Process all 128 OAM entries */
-    for (int s = 0; s < 128; s++) {
+    /* Process all 128 OAM entries, last to first.
+     *
+     * On the GBA the lowest OAM index wins a contested pixel, and
+     * BuildOamBuffer() sorts the buffer accordingly -- so painting them in
+     * index order lets every sprite cover the ones that should be in front
+     * of it. Walking backwards leaves entry 0 on top, which is what put the
+     * naming screen's "lower" label back in front of its button. */
+    for (int s = 127; s >= 0; s--) {
         const u8 *entry = oam + s * 8;
 
         u16 attr0 = *(u16 *)(entry + 0);
