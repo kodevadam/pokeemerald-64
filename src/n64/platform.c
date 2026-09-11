@@ -165,6 +165,9 @@ static void N64_PifTerminateBoot(void)
 
     /* PIF-RAM is 64 bytes at 0xBFC007C0; byte 0x3F is the command byte, so
      * the containing word is at 0xBFC007FC.  Bit 3 = "boot terminated". */
+    /* crt0.s already sent this before the long ROM-to-RDRAM copies, since
+     * the PIF's five-second deadline expires partway through them. Repeating
+     * it here is harmless and keeps the sequence obvious. */
     *(volatile u32 *)0xBFC007FCu = 0x08u;
 }
 

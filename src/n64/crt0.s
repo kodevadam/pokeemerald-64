@@ -47,13 +47,15 @@ __n64_boot:
     /* -----------------------------------------------------------------------
      * DIAG-RED: Pure-assembly VI init at the very first instruction of
      * __n64_boot.  If RED appears, the CPU reached our code.
-     * Framebuffer at 0x80340000 (physical 0x340000, base RDRAM).
+     * Framebuffer at 0x807B0000 (physical 0x7B0000) -- the same buffer the
+     * VI uses once the game is running, so it does not collide with the
+     * RDRAM window the const data is copied into.
      * VI registers at 0xA4400000 (KSEG1 uncached).
      * --------------------------------------------------------------------- */
     li      $t0, 0xA4400000         /* VI base (KSEG1 uncached)              */
     li      $t1, 0x00003202         /* VI_STATUS: 16bpp RGBA5551             */
     sw      $t1, 0x00($t0)          /* VI_STATUS                              */
-    li      $t1, 0x00340000         /* VI_ORIGIN: physical 0x340000           */
+    li      $t1, 0x007B0000         /* VI_ORIGIN: physical 0x7B0000           */
     sw      $t1, 0x04($t0)          /* VI_ORIGIN                              */
     li      $t1, 320
     sw      $t1, 0x08($t0)          /* VI_WIDTH                               */
@@ -81,9 +83,9 @@ __n64_boot:
     /* Fill framebuffer with RED (RGBA5551: R=31, G=0, B=0, A=1 = 0xF801)
      * Use KSEG1 (uncached, 0xA0000000+) so writes go directly to RDRAM —
      * VI reads RDRAM directly and won't see cached-but-not-written-back data */
-    lui     $t2, 0xA034             /* $t2 = 0xA0340000 (KSEG1 uncached)     */
-    lui     $t3, 0xA036
-    ori     $t3, $t3, 0x5800        /* $t3 = 0xA0365800 (end: 0xA0340000+320*240*2) */
+    lui     $t2, 0xA07B             /* $t2 = 0xA07B0000 (KSEG1 uncached)     */
+    lui     $t3, 0xA07D
+    ori     $t3, $t3, 0x5800        /* $t3 = 0xA07D5800 (end: 0xA07B0000+320*240*2) */
     li      $t1, 0xF801F801         /* two red pixels packed into one word    */
 .Ldiag_red_fill:
     sw      $t1, 0($t2)
@@ -91,6 +93,18 @@ __n64_boot:
     bne     $t2, $t3, .Ldiag_red_fill
     nop
     /* END DIAG-RED -------------------------------------------------------- */
+
+    /* -----------------------------------------------------------------------
+     * Tell the PIF the boot process is over. The PIF gives the CPU five
+     * seconds to send this and halts it otherwise, and the ROM-to-RDRAM
+     * copies below take longer than that, so it has to go out before them
+     * rather than from N64Main().
+     * PIF RAM byte 0x3F, bit 3 = "boot terminated"; the containing word is
+     * at 0xBFC007FC.
+     * --------------------------------------------------------------------- */
+    li      $t0, 0xBFC007FC
+    li      $t1, 0x00000008
+    sw      $t1, 0($t0)
 
     /* Disable all interrupts and clear BEV (use normal exception vectors).
      * BEV = bit 22 (0x00400000); IE = bit 0; EXL = bit 1; ERL = bit 2.
@@ -102,9 +116,9 @@ __n64_boot:
     ori     $t0, $t0, 0x0400   /* set IM2 (bit10) — enable RCP interrupt mask */
     mtc0    $t0, $12
 
-    /* Set up stack — DIAG: use base RDRAM (0x803A0000) to work on 4MB N64s
-     * without expansion pak.  Restore to __stack_top once DMA is confirmed. */
-    li      $sp, 0x803A0000
+    /* Set up stack. __stack_top is reserved by n64.ld just above .bss, so
+     * it stays clear of the RDRAM window the const data is copied into. */
+    la      $sp, __stack_top
     addiu   $sp, $sp, -8       /* ABI: maintain 8-byte alignment          */
 
     /* Set global pointer */
@@ -160,6 +174,7 @@ __n64_boot:
     bnez    $t3, .Ltext_icache_flush
     nop
 
+
     /* -----------------------------------------------------------------------
      * Copy initialised data sections from ROM (KSEG1) to RDRAM word by word.
      * PI DMA hangs on SC64; use CPU copy (data section is small, ~5 KB).
@@ -204,29 +219,50 @@ __n64_boot:
      * 1 MB IPL3 loaded at 0x80400000, so this copy cannot overwrite the
      * code it is running from.
      * --------------------------------------------------------------------- */
-    la      $t0, __rodata_lma      /* KSEG1 ROM source                      */
-    la      $t1, __rodata_start    /* KSEG0 RDRAM destination               */
-    la      $t2, __rodata_end
-    beq     $t1, $t2, .Lrodata_done
+    la      $a0, __rodata_start
+    la      $a1, __rodata_lma
+    la      $a2, __rodata_end
+    subu    $a2, $a2, $a0
+    beqz    $a2, .Lrodata_done
     nop
-.Lcopy_rodata:
-    lw      $t3, 0($t0)
-    sw      $t3, 0($t1)
-    addiu   $t0, $t0, 4
-    addiu   $t1, $t1, 4
-    bne     $t1, $t2, .Lcopy_rodata
+    jal     .Lpi_dma_read
     nop
 
-    sync
-    la      $t0, __rodata_start
-    la      $t1, __rodata_end
-.Lrodata_dcache_flush:
-    cache   0x15, 0($t0)
-    addiu   $t0, $t0, 32
-    sltu    $t3, $t0, $t1
-    bnez    $t3, .Lrodata_dcache_flush
+    lui     $t2, 0xA07B
+    lui     $t3, 0xA07D
+    ori     $t3, $t3, 0x5800
+    li      $t1, 0x07C107C1
+.Ldiag_green:
+    sw      $t1, 0($t2)
+    addiu   $t2, $t2, 4
+    bne     $t2, $t3, .Ldiag_green
     nop
 .Lrodata_done:
+
+    /* -----------------------------------------------------------------------
+     * Copy the GBA script/text data to RDRAM, for the same reason as
+     * .rodata above: the script engine and every string routine walk it a
+     * byte at a time, which the PI bus cannot serve correctly.
+     * --------------------------------------------------------------------- */
+    la      $a0, __script_data_start
+    la      $a1, __script_data_lma
+    la      $a2, __script_data_end
+    subu    $a2, $a2, $a0
+    beqz    $a2, .Lscript_done
+    nop
+    jal     .Lpi_dma_read
+    nop
+
+    lui     $t2, 0xA07B
+    lui     $t3, 0xA07D
+    ori     $t3, $t3, 0x5800
+    li      $t1, 0x07FF07FF
+.Ldiag_cyan:
+    sw      $t1, 0($t2)
+    addiu   $t2, $t2, 4
+    bne     $t2, $t3, .Ldiag_cyan
+    nop
+.Lscript_done:
 
     /* -----------------------------------------------------------------------
      * Clear BSS
@@ -274,6 +310,19 @@ __n64_boot:
     bne     $t0, $t1, .Licache_flush
     nop
 
+    /* Repaint the boot screen blue: red means the ROM-to-RDRAM copies are
+     * still running, blue means they finished and the game is starting.
+     * Both give way to the first composited frame. */
+    lui     $t2, 0xA07B
+    lui     $t3, 0xA07D
+    ori     $t3, $t3, 0x5800
+    li      $t1, 0x003F003F         /* two blue pixels packed into one word  */
+.Ldiag_blue_fill:
+    sw      $t1, 0($t2)
+    addiu   $t2, $t2, 4
+    bne     $t2, $t3, .Ldiag_blue_fill
+    nop
+
     /* -----------------------------------------------------------------------
      * Call N64Main() — does not return
      * --------------------------------------------------------------------- */
@@ -283,6 +332,72 @@ __n64_boot:
     /* If N64Main ever returns, loop forever */
 .Lhalt:
     b       .Lhalt
+    nop
+
+
+/* -----------------------------------------------------------------------
+ * .Lpi_dma_read — cartridge to RDRAM over PI DMA.
+ *   $a0 = RDRAM destination (KSEG0), $a1 = ROM source (KSEG1), $a2 = bytes
+ * Clobbers $a0-$a2, $t4-$t8. Word-copying this much off the PI bus takes
+ * minutes; DMA takes a moment.
+ * --------------------------------------------------------------------- */
+.Lpi_dma_read:
+    move    $t8, $ra
+    li      $t4, 0xA4600000         /* PI registers (KSEG1 uncached)        */
+    li      $t7, 0x1FFFFFFF         /* KSEG0/KSEG1 -> physical              */
+    and     $t5, $a0, $t7           /* $t5 = destination, physical          */
+    and     $t6, $a1, $t7           /* $t6 = source, physical               */
+
+    /* Drop anything stale the caches hold over the destination: the DMA
+     * writes RDRAM behind the CPU's back. */
+    move    $a1, $a0
+    addu    $a3, $a0, $a2
+.Lpi_dma_inval:
+    cache   0x15, 0($a1)            /* Hit_Writeback_Invalidate_D           */
+    addiu   $a1, $a1, 32
+    sltu    $t7, $a1, $a3
+    bnez    $t7, .Lpi_dma_inval
+    nop
+    sync
+
+.Lpi_dma_chunk:
+    /* Wait for PI to go idle (bits 0 and 1 = DMA busy / IO busy) */
+.Lpi_dma_wait_before:
+    lw      $t7, 0x10($t4)
+    andi    $t7, $t7, 0x3
+    bnez    $t7, .Lpi_dma_wait_before
+    nop
+
+    /* One transfer at a time, capped so a single length field never has to
+     * describe more than a megabyte. */
+    li      $t7, 0x00100000
+    sltu    $a3, $a2, $t7
+    bnez    $a3, .Lpi_dma_last
+    nop
+    move    $a3, $t7
+    b       .Lpi_dma_go
+    nop
+.Lpi_dma_last:
+    move    $a3, $a2
+.Lpi_dma_go:
+    sw      $t5, 0x00($t4)          /* PI_DRAM_ADDR                          */
+    sw      $t6, 0x04($t4)          /* PI_CART_ADDR                          */
+    addiu   $t7, $a3, -1
+    sw      $t7, 0x0C($t4)          /* PI_WR_LEN = length - 1, starts the DMA */
+
+.Lpi_dma_wait_after:
+    lw      $t7, 0x10($t4)
+    andi    $t7, $t7, 0x1
+    bnez    $t7, .Lpi_dma_wait_after
+    nop
+
+    addu    $t5, $t5, $a3
+    addu    $t6, $t6, $a3
+    subu    $a2, $a2, $a3
+    bnez    $a2, .Lpi_dma_chunk
+    nop
+
+    jr      $t8
     nop
 
     .size   __n64_boot, . - __n64_boot

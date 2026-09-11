@@ -268,8 +268,17 @@ static void UNUSED StitchObjectsOn8x8Canvas(s32 object_size, s32 object_count, u
 
 u32 GetDecompressedDataSize(const u32 *ptr)
 {
+#if defined(N64_PORT) && N64_PORT
+    // Compressed graphics stay in cartridge ROM, where the PI bus only
+    // answers word-sized reads, so the header's three size bytes have to
+    // come out of one word load rather than three byte loads. The bytes
+    // themselves are still in the GBA's little-endian order.
+    u32 header = *ptr;
+    return ((header >> 16) & 0xFF) | (((header >> 8) & 0xFF) << 8) | ((header & 0xFF) << 16);
+#else
     const u8 *ptr8 = (const u8 *)ptr;
     return (ptr8[3] << 16) | (ptr8[2] << 8) | (ptr8[1]);
+#endif
 }
 
 bool8 LoadCompressedSpriteSheetUsingHeap(const struct CompressedSpriteSheet *src)
@@ -277,7 +286,7 @@ bool8 LoadCompressedSpriteSheetUsingHeap(const struct CompressedSpriteSheet *src
     struct SpriteSheet dest;
     void *buffer;
 
-    buffer = AllocZeroed(src->data[0] >> 8);
+    buffer = AllocZeroed(GetDecompressedDataSize(src->data));
     LZ77UnCompWram(src->data, buffer);
 
     dest.data = buffer;
@@ -294,7 +303,7 @@ bool8 LoadCompressedSpritePaletteUsingHeap(const struct CompressedSpritePalette 
     struct SpritePalette dest;
     void *buffer;
 
-    buffer = AllocZeroed(src->data[0] >> 8);
+    buffer = AllocZeroed(GetDecompressedDataSize(src->data));
     LZ77UnCompWram(src->data, buffer);
     dest.data = buffer;
     dest.tag = src->tag;

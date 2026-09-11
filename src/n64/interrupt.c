@@ -103,6 +103,29 @@ void N64_DispatchIntr(void)
     u32 cause;
     asm volatile ("mfc0 %0, $13" : "=r"(cause));
 
+    /* TEMPORARY DIAGNOSTIC: paint the interrupted PC at the top of the
+     * framebuffer. When the main loop stops, the compositor stops painting
+     * over it, so the last value left on screen is where the CPU is stuck. */
+    {
+        extern u16 *gN64FrontBuffer;
+        extern u32 gDiagLzSrc, gDiagLzDst, gDiagLzSize;
+        u32 epc;
+        u32 vals[4];
+        asm volatile ("mfc0 %0, $14" : "=r"(epc));
+        vals[0] = epc;
+        vals[1] = gDiagLzSrc;
+        vals[2] = gDiagLzDst;
+        vals[3] = gDiagLzSize;
+        for (int k = 0; k < 4; k++) {
+            for (int b = 0; b < 8; b++) {
+                u16 c = (u16)((((vals[k] >> ((7 - b) * 4)) & 0xFu) << 11) | 1);
+                for (int y = 30 + k * 12; y < 40 + k * 12; y++)
+                    for (int x = 0; x < 14; x++)
+                        gN64FrontBuffer[y * 320 + b * 14 + x] = c;
+            }
+        }
+    }
+
     /* Check ExcCode field (bits 6-2): 0 = interrupt */
     if ((cause & CAUSE_EXCCODE) != 0)
         return;  /* Not an interrupt — unexpected exception, ignore */

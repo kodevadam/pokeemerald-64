@@ -182,45 +182,73 @@ void CpuFastSet(const void *src, void *dst, u32 ctrl)
  * --------------------------------------------------------------------- */
 /* Compressed LZ77/RL assets in this game top out around 9 KB (the largest
  * is a ~8.9 KB tileset); 16 KB gives headroom for anything else. */
-#define LZ_STAGING_SIZE 0x4000
-static u32 sLzStaging[LZ_STAGING_SIZE / 4];
+/* -----------------------------------------------------------------------
+ * Sequential byte reader for compressed source data.
+ *
+ * The bulk graphics blobs stay in cartridge ROM (see n64.ld), and the PI
+ * bus only answers word-sized reads: pulling a byte at a time straight off
+ * it -- as the original GBA algorithms do -- silently returns the byte from
+ * two positions further on whenever the address lands in the upper half of
+ * a word. That was the root cause of the tile corruption visible from the
+ * copyright screen onward.
+ *
+ * So read words and hand out their bytes. One word load per four bytes,
+ * the same traffic a straight byte walk would have wanted, and unlike a
+ * fixed staging buffer it puts no ceiling on how large a compressed blob
+ * may be -- a ceiling that showed up as the Pokeball release animation
+ * hanging the game partway through Birch's intro.
+ * --------------------------------------------------------------------- */
+struct ByteReader
+{
+    const u32 *word;
+    u32 cur;
+    u32 pos;    /* byte index within cur, 0 = most significant */
+};
 
+static inline void ByteReaderInit(struct ByteReader *r, const u8 *src)
+{
+    r->word = (const u32 *)((uintptr_t)src & ~(uintptr_t)3);
+    r->pos  = (uintptr_t)src & 3;
+    r->cur  = *r->word;
+}
+
+static inline u8 ByteReaderNext(struct ByteReader *r)
+{
+    u8 b = (u8)(r->cur >> ((3 - r->pos) * 8));
+    if (++r->pos == 4)
+    {
+        r->pos = 0;
+        r->cur = *++r->word;
+    }
+    return b;
+}
+
+u32 gDiagLzSrc, gDiagLzDst, gDiagLzSize;
 static void lz77_decomp(const u8 *src, u8 *dst)
 {
-    /* Compressed source data lives in ROM (ID .rodata is never copied to
-     * RDRAM -- see n64.ld), so src is a KSEG1 pointer straight onto the
-     * cartridge's PI bus.  The PI bus does not support sub-word CPU
-     * accesses: reading it one byte at a time (as this function used to,
-     * matching the original GBA algorithm exactly) silently returns the
-     * wrong byte roughly half the time, since the bus is really only
-     * word-addressable.  That was the root cause of the tile/tilemap
-     * corruption visible from the very first working build (copyright
-     * screen onward) -- not a bug in the LZ77 algorithm itself.
-     *
-     * Word-sized reads from ROM are reliable (this is exactly how
-     * crt0.s's boot-time .text/.data copy already reads ROM).  So stage
-     * the whole compressed block into RDRAM with a word copy first, and
-     * do the actual byte-oriented LZ77 decoding out of that RDRAM copy,
-     * where byte access has no such restriction. */
-    const u32 *srcWords = (const u32 *)src;
-    for (u32 i = 0; i < LZ_STAGING_SIZE / 4; i++)
-        sLzStaging[i] = srcWords[i];
-    src = (const u8 *)sLzStaging;
+    struct ByteReader r;
+    ByteReaderInit(&r, src);
+    gDiagLzSrc = (u32)(uintptr_t)src;
+    gDiagLzDst = (u32)(uintptr_t)dst;
 
-    /* Skip the 4-byte header */
-    u32 decompSize = ((u32)src[1]) | ((u32)src[2] << 8) | ((u32)src[3] << 16);
-    src += 4;
+    /* Header: type byte then a 24-bit little-endian decompressed size */
+    ByteReaderNext(&r);
+    u32 decompSize = (u32)ByteReaderNext(&r)
+                   | ((u32)ByteReaderNext(&r) << 8)
+                   | ((u32)ByteReaderNext(&r) << 16);
+
+    gDiagLzSize = decompSize;
 
     u8 *out = dst;
     u8 *end = dst + decompSize;
 
     while (out < end) {
-        u8 flags = *src++;
+        u8 flags = ByteReaderNext(&r);
         for (int i = 7; i >= 0 && out < end; i--) {
             if (flags & (1 << i)) {
                 /* Back-reference */
-                u8 b0 = *src++;
-                u8 b1 = *src++;
+                u8 b0 = ByteReaderNext(&r);
+                u8 b1 = ByteReaderNext(&r);
                 int length = ((b0 >> 4) & 0xF) + 3;
                 int disp   = ((b0 & 0xF) << 8) | b1;
                 u8 *ref    = out - disp - 1;
@@ -228,7 +256,7 @@ static void lz77_decomp(const u8 *src, u8 *dst)
                     *out++ = *ref++;
             } else {
                 /* Literal */
-                *out++ = *src++;
+                *out++ = ByteReaderNext(&r);
             }
         }
     }
@@ -270,33 +298,31 @@ void LZ77UnCompVram(const void *src, void *dst)
  * --------------------------------------------------------------------- */
 static void rl_decomp(const u8 *src, u8 *dst)
 {
-    /* Same fix as lz77_decomp: stage the ROM-resident compressed source
-     * into RDRAM via word reads first -- see the comment there for why
-     * byte-at-a-time reads from ROM/PI-bus space are unreliable. */
-    const u32 *srcWords = (const u32 *)src;
-    for (u32 i = 0; i < LZ_STAGING_SIZE / 4; i++)
-        sLzStaging[i] = srcWords[i];
-    src = (const u8 *)sLzStaging;
+    /* Same word-based source reader as lz77_decomp -- see the note there. */
+    struct ByteReader r;
+    ByteReaderInit(&r, src);
 
-    u32 decompSize = ((u32)src[1]) | ((u32)src[2] << 8) | ((u32)src[3] << 16);
-    src += 4;
+    ByteReaderNext(&r);
+    u32 decompSize = (u32)ByteReaderNext(&r)
+                   | ((u32)ByteReaderNext(&r) << 8)
+                   | ((u32)ByteReaderNext(&r) << 16);
 
     u8 *out = dst;
     u8 *end = dst + decompSize;
 
     while (out < end) {
-        u8 flag = *src++;
+        u8 flag = ByteReaderNext(&r);
         if (flag & 0x80) {
             /* Compressed run */
             int count = (flag & 0x7F) + 3;
-            u8 data   = *src++;
+            u8 data   = ByteReaderNext(&r);
             while (count-- && out < end)
                 *out++ = data;
         } else {
             /* Uncompressed run */
             int count = (flag & 0x7F) + 1;
             while (count-- && out < end)
-                *out++ = *src++;
+                *out++ = ByteReaderNext(&r);
         }
     }
 }

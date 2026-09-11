@@ -24,7 +24,7 @@ MEMORY
 {
     /* RDRAM — 4MB base + 4MB expansion pak = 8MB total.
      * Expansion pak REQUIRED (the game's buffers live at 0x80790000+).
-     * .boot VMA = 0x80400000, loaded there by libdragon's compat IPL3.
+     * .boot VMA = 0x80360000, loaded there by libdragon's compat IPL3.
      * .text / .data are copied to 0x80000400+ by crt0.s at boot.
      * Low 1KB (0x80000000-0x800003FF) is used for exception vectors.        */
     RDRAM  (rwx) : ORIGIN = 0x80000400, LENGTH = 8M - 0x400
@@ -35,12 +35,13 @@ MEMORY
      * The 4KB at 0xB0000000 is the N64 header; game sections start at +0x1000 */
     ROM    (rx)  : ORIGIN = 0xB0000000, LENGTH = 64M
 
-    /* The slice of RDRAM that holds the copied-to-RAM part of .rodata.
-     * Starts right above the 1 MB IPL3 DMA's at 0x80400000 (so the copy
-     * cannot land on crt0 while crt0 is still running out of it) and ends
-     * where the software GBA palette/VRAM/OAM buffers begin. Overflowing
-     * it is a link error rather than a mysterious corruption at runtime. */
-    RDRAM2 (rw)  : ORIGIN = 0x80500000, LENGTH = 0x290000
+    /* The slice of RDRAM holding the read-only data that has to be copied
+     * out of cartridge ROM: most of .rodata plus all of .script_data.
+     * Runs from above the boot stub to where the software GBA
+     * palette/VRAM/OAM buffers begin (the stack lives at the very top of
+     * that gap, growing down from __stack_top). Overflowing this is a link
+     * error rather than a mysterious corruption at runtime. */
+    RDRAM2 (rw)  : ORIGIN = 0x80380000, LENGTH = 0x410000
 }
 
 /*
@@ -81,14 +82,16 @@ SECTIONS
     /*  Placement constraints (see rom_header.s for the full reasoning):   */
     /*    - NOT in the top 32 KiB (0x807F8000+): libdragon reserves that   */
     /*      for its loader/stack and clears it before jumping.             */
-    /*    - IPL3 falls back to DMA'ing 1 MiB, so 0x80400000..0x80500000    */
-    /*      must be free — it is: above __bss_end (0x80332030) and below   */
-    /*      __sw_palette_start (0x80790000).                               */
+    /*    - IPL3 falls back to DMA'ing 1 MiB from here, which lands in the */
+    /*      RDRAM2 const-data window; harmless, crt0 fills that window      */
+    /*      afterwards.                                                     */
+    /*    - Below RDRAM2 (0x80380000), so the const-data copies below never */
+    /*      overwrite the boot stub while it is still running.             */
     /*                                                                     */
-    /*  crt0.s (__n64_boot) runs from 0x80400000, copies .text to         */
-    /*  0x80000400 and .data to its RDRAM VMA, then calls N64Main().      */
+    /*  crt0.s (__n64_boot) runs from 0x80360000, copies .text, .data,     */
+    /*  .rodata and .script_data into RDRAM, then calls N64Main().         */
     /* ------------------------------------------------------------------ */
-    .boot 0x80400000 :
+    .boot 0x80360000 :
     {
         KEEP(*(.boot))
         KEEP(*(.boot.*))
@@ -147,17 +150,22 @@ SECTIONS
         . = ALIGN(8);
     } > ROM
 
-    /* GBA script/event/text data from data/*.s
+    /* GBA script/event/text data from data/*.s -- every message in the
+     * game plus the event scripts. Copied to RDRAM with .rodata below: the
+     * script engine and all the string routines walk it a byte at a time,
+     * which cartridge ROM cannot serve correctly.
      * NOTE: input sections are named "script_data" (no leading dot),
-     * so we capture both forms: with and without the leading dot.
-     * Stays in ROM: it is another megabyte, and the script engine reads it
-     * through ScriptReadByte/Halfword/Word, which are word-based on N64. */
+     * so we capture both forms: with and without the leading dot.      */
     .script_data :
     {
+        __script_data_start = .;
         *(script_data script_data.*)
         *(.script_data .script_data.*)
         . = ALIGN(8);
-    } > ROM
+        __script_data_end = .;
+    } > RDRAM2 AT > ROM
+
+    __script_data_lma = LOADADDR(.script_data);
 
     /* ------------------------------------------------------------------ */
     /*  The rest of .rodata: copied to RDRAM at boot by crt0.s so that     */

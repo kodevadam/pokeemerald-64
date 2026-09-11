@@ -40,10 +40,13 @@
     /* Clock rate (0 = default) — must be 0x00000000 for libdragon IPL3 */
     .byte   0x00, 0x00, 0x00, 0x00
 
-    /* Entry point / load address in RDRAM (KSEG0 0x80400000) — big-endian.
+    /* Entry point / load address in RDRAM (KSEG0 0x80360000) — big-endian.
      * libdragon's compat IPL3 reads this single field for BOTH the DMA
-     * destination and the jump target, so .boot's VMA in n64.ld must match. */
-    .byte   0x80, 0x40, 0x00, 0x00
+     * destination and the jump target, so .boot's VMA in n64.ld must match.
+     * It sits between the boot stack (just above .bss) and the RDRAM window
+     * the const data is copied into; IPL3's 1 MB fallback DMA does reach
+     * into that window, but crt0 hands off to .text before filling it. */
+    .byte   0x80, 0x36, 0x00, 0x00
 
     /* Release / OS version */
     .byte   0x00, 0x00, 0x00, 0x00
