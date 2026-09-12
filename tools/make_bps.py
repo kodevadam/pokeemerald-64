@@ -310,6 +310,10 @@ def main():
     ap.add_argument("output", help="patch to write")
     ap.add_argument("--stats", action="store_true",
                     help="report how much of the .z64 came from the source ROM")
+    ap.add_argument("--gzip", action="store_true",
+                    help="gzip the patch (the web patcher inflates it transparently). "
+                         "Worth it: what the patch carries is mostly MIPS code, which "
+                         "compresses to around 40%%.")
     ap.add_argument("--verify", action="store_true", default=True,
                     help="apply the patch back and check it reproduces the target")
     ap.add_argument("--no-verify", dest="verify", action="store_false")
@@ -346,11 +350,23 @@ def main():
             return 1
         print("verified: patch reproduces the target byte for byte")
 
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-    with open(args.output, "wb") as f:
-        f.write(patch)
+    out_path = args.output
+    blob = patch
+    if args.gzip:
+        import gzip as _gzip
+        if not out_path.endswith(".gz"):
+            out_path += ".gz"
+        blob = _gzip.compress(patch, 9)
 
-    print(f"wrote  {args.output}  {human(len(patch))}")
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    with open(out_path, "wb") as f:
+        f.write(blob)
+
+    if args.gzip:
+        print(f"wrote  {out_path}  {human(len(blob))}  "
+              f"({human(len(patch))} uncompressed)")
+    else:
+        print(f"wrote  {out_path}  {human(len(patch))}")
 
     if args.stats:
         total = len(target)

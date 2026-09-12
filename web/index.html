@@ -407,9 +407,9 @@
 
         <button type="button" class="drop compact" id="bpsDrop" hidden>
           <span class="drop-main">Drop pokeemerald64.bps here, or click to choose</span>
-          <span class="drop-sub">built with tools/make_bps.py</span>
+          <span class="drop-sub">built with tools/make_bps.py · .bps or .bps.gz</span>
         </button>
-        <input type="file" id="bpsInput" accept=".bps" hidden>
+        <input type="file" id="bpsInput" accept=".bps,.gz" hidden>
 
         <div class="readout" id="bpsOut" hidden>
           <div class="row"><span class="key">Patch</span><span class="val" id="bpsName">—</span></div>
@@ -749,10 +749,22 @@
     refresh();
   }
 
+  /** Patches are often shipped gzipped — what they carry is mostly MIPS code,
+   *  which compresses to about 40%. Inflate those transparently. */
+  async function maybeGunzip(bytes) {
+    if (bytes.length < 2 || bytes[0] !== 0x1F || bytes[1] !== 0x8B) return bytes;
+    if (typeof DecompressionStream !== "function")
+      throw new Error("This patch is gzipped and this browser cannot inflate it. " +
+                      "Decompress it yourself and drop the plain .bps in.");
+    const ds = new DecompressionStream("gzip");
+    const stream = new Blob([bytes]).stream().pipeThrough(ds);
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
   async function loadPatchFile(file) {
     say("bpsMsg", "");
     try {
-      adoptPatch(new Uint8Array(await file.arrayBuffer()), file.name);
+      adoptPatch(await maybeGunzip(new Uint8Array(await file.arrayBuffer())), file.name);
     } catch (e) {
       setPill(2, "fail", "Unusable");
       setStage(2, "error");
@@ -761,19 +773,21 @@
   }
 
   async function findBundledPatch() {
-    try {
-      const res = await fetch("pokeemerald64.bps", { cache: "no-store" });
-      if (!res.ok) throw new Error("not bundled");
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      adoptPatch(bytes, "pokeemerald64.bps (bundled)");
-    } catch {
-      setPill(2, "idle", "Needed");
-      setStage(2, "active");
-      $("bpsDrop").hidden = false;
-      $("patchNote").textContent =
-        "No patch is bundled with this page yet. Build one from a ROM you own with " +
-        "tools/make_bps.py in the repo, then drop the .bps here.";
+    for (const name of ["pokeemerald64.bps.gz", "pokeemerald64.bps"]) {
+      try {
+        const res = await fetch(name, { cache: "no-store" });
+        if (!res.ok) continue;
+        const raw = new Uint8Array(await res.arrayBuffer());
+        adoptPatch(await maybeGunzip(raw), name + " (bundled)");
+        return;
+      } catch { /* try the next name */ }
     }
+    setPill(2, "idle", "Needed");
+    setStage(2, "active");
+    $("bpsDrop").hidden = false;
+    $("patchNote").textContent =
+      "No patch is bundled with this page yet. Build one from a ROM you own with " +
+      "tools/make_bps.py in the repo, then drop the .bps here.";
   }
 
   /* ---------------- stage 3: build ---------------- */

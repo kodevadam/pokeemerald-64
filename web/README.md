@@ -30,8 +30,12 @@ make -f Makefile.n64                       # produces build/n64/pokeemerald64.z6
 python3 tools/make_bps.py \
         /path/to/pokeemerald.gba \
         build/n64/pokeemerald64.z64 \
-        web/pokeemerald64.bps --stats
+        web/pokeemerald64.bps --stats --gzip
 ```
+
+`--gzip` is worth using. What the patch carries is dominated by MIPS code,
+which compresses to roughly 40%; the page sniffs the gzip magic and inflates
+transparently, and looks for `pokeemerald64.bps.gz` before `pokeemerald64.bps`.
 
 The source ROM must be Pokémon Emerald (USA),
 sha1 `f3ae088181bf583e55daf962a92bb46f4f1d07b7`. `make_bps.py` refuses anything
