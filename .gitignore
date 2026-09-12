@@ -41,3 +41,7 @@ prefabs.json
 *.js
 /pokeemerald-*.png
 /pokeemerald_modern-*.png
+
+# ROM-derived conversion patch: build it locally with tools/make_bps.py
+web/*.bps
+tools/__pycache__/

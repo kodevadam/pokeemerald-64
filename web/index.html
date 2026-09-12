@@ -1,0 +1,877 @@
+<title>Emerald64 Cartridge Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:      #13141C;
+    --surface:     #1B1D28;
+    --surface-2:   #232635;
+    --line:        #2E3142;
+    --line-soft:   #23263354;
+    --ink:         #E9EAF2;
+    --ink-mid:     #A6A9BE;
+    --ink-dim:     #6F7389;
+    --accent:      #8878FF;
+    --accent-soft: #8878FF1F;
+    --ok:          #4ADE9B;
+    --ok-soft:     #4ADE9B1F;
+    --warn:        #F2B544;
+    --warn-soft:   #F2B5441F;
+    --bad:         #FF7070;
+    --bad-soft:    #FF70701F;
+
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --ground:      #F4F4F8;
+      --surface:     #FFFFFF;
+      --surface-2:   #F0F0F6;
+      --line:        #DEDEE9;
+      --line-soft:   #E7E7F0;
+      --ink:         #16171F;
+      --ink-mid:     #55586B;
+      --ink-dim:     #85889B;
+      --accent:      #5B46E5;
+      --accent-soft: #5B46E514;
+      --ok:          #128A5B;
+      --ok-soft:     #128A5B14;
+      --warn:        #9A6B06;
+      --warn-soft:   #9A6B0614;
+      --bad:         #C93A3A;
+      --bad-soft:    #C93A3A14;
+    }
+  }
+
+  :root[data-theme="light"] {
+    --ground:      #F4F4F8;
+    --surface:     #FFFFFF;
+    --surface-2:   #F0F0F6;
+    --line:        #DEDEE9;
+    --line-soft:   #E7E7F0;
+    --ink:         #16171F;
+    --ink-mid:     #55586B;
+    --ink-dim:     #85889B;
+    --accent:      #5B46E5;
+    --accent-soft: #5B46E514;
+    --ok:          #128A5B;
+    --ok-soft:     #128A5B14;
+    --warn:        #9A6B06;
+    --warn-soft:   #9A6B0614;
+    --bad:         #C93A3A;
+    --bad-soft:    #C93A3A14;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding-inline: 20px;
+    padding-block: 0 72px;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 700px; margin: 0 auto; }
+
+  /* ---------- masthead ---------- */
+
+  header { padding-block: 56px 40px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 14px;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(28px, 6vw, 38px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.12;
+    text-wrap: balance;
+    margin: 0 0 16px;
+  }
+
+  .lede {
+    margin: 0;
+    max-width: 60ch;
+    color: var(--ink-mid);
+    font-size: 16px;
+  }
+
+  .lede b { color: var(--ink); font-weight: 500; }
+
+  .privacy {
+    margin-top: 22px;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 13px 7px 11px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: 13px;
+    color: var(--ink-mid);
+  }
+
+  .privacy svg { flex: none; color: var(--ok); }
+
+  /* ---------- pipeline ---------- */
+
+  .pipeline { display: flex; flex-direction: column; }
+
+  .stage {
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 0 18px;
+    position: relative;
+  }
+
+  /* the connecting run between step markers */
+  .stage:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 30px;
+    bottom: -2px;
+    width: 2px;
+    background: var(--line);
+  }
+
+  .marker {
+    position: relative;
+    z-index: 1;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    transition: background .18s, border-color .18s, color .18s;
+  }
+
+  .stage[data-state="active"] .marker { border-color: var(--accent); color: var(--accent); }
+  .stage[data-state="done"]   .marker { background: var(--ok); border-color: var(--ok); color: var(--ground); }
+  .stage[data-state="error"]  .marker { background: var(--bad); border-color: var(--bad); color: var(--ground); }
+
+  .stage-body { padding-bottom: 30px; min-width: 0; }
+
+  .stage-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    min-height: 30px;
+  }
+
+  h2 {
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    margin: 0;
+  }
+
+  .pill {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .pill.idle { color: var(--ink-dim); border-color: var(--line); }
+  .pill.work { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+  .pill.good { color: var(--ok);   border-color: var(--ok);   background: var(--ok-soft); }
+  .pill.fail { color: var(--bad);  border-color: var(--bad);  background: var(--bad-soft); }
+
+  .stage-note {
+    margin: 6px 0 0;
+    color: var(--ink-mid);
+    font-size: 13.5px;
+    max-width: 58ch;
+  }
+
+  /* ---------- drop target ---------- */
+
+  .drop {
+    margin-top: 14px;
+    border: 1.5px dashed var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 26px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    width: 100%;
+    font: inherit;
+    color: inherit;
+    display: block;
+  }
+  .drop:hover, .drop:focus-visible { border-color: var(--accent); background: var(--surface-2); }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); border-style: solid; }
+  .drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .drop-main { font-weight: 500; font-size: 14.5px; }
+  .drop-sub  { color: var(--ink-dim); font-size: 12.5px; margin-top: 5px; font-family: var(--mono); }
+
+  .drop.compact { padding: 15px 18px; text-align: left; }
+
+  /* ---------- data readout ---------- */
+
+  .readout {
+    margin-top: 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 104px 1fr;
+    gap: 14px;
+    padding: 9px 14px;
+    border-top: 1px solid var(--line-soft);
+    align-items: baseline;
+  }
+  .row:first-child { border-top: 0; }
+
+  .key {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+
+  .val {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink);
+    word-break: break-all;
+    font-variant-numeric: tabular-nums;
+  }
+  .val.ok  { color: var(--ok); }
+  .val.bad { color: var(--bad); }
+
+  /* ---------- actions ---------- */
+
+  .btn {
+    font-family: var(--sans);
+    font-size: 14.5px;
+    font-weight: 600;
+    padding: 11px 22px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    transition: filter .15s, opacity .15s;
+  }
+  .btn:hover:not(:disabled) { filter: brightness(1.1); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.ghost { background: transparent; color: var(--accent); }
+
+  .actions { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+  .bar {
+    margin-top: 14px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+  .msg { margin-top: 12px; font-size: 13.5px; }
+  .msg.bad { color: var(--bad); }
+  .msg.ok  { color: var(--ok); }
+
+  [hidden] { display: none !important; }
+
+  /* ---------- reference footer ---------- */
+
+  footer {
+    margin-top: 26px;
+    border-top: 1px solid var(--line);
+    padding-top: 30px;
+  }
+
+  h3 {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin: 0 0 14px;
+  }
+
+  footer p { color: var(--ink-mid); font-size: 13.5px; max-width: 62ch; margin: 0 0 14px; }
+  footer p:last-of-type { margin-bottom: 0; }
+  footer code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink);
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+    word-break: break-all;
+  }
+  footer .readout { margin-bottom: 24px; }
+
+  @media (max-width: 460px) {
+    .row { grid-template-columns: 1fr; gap: 2px; }
+    .stage { grid-template-columns: 24px 1fr; gap: 0 13px; }
+    .stage:not(:last-child)::before { left: 11px; }
+    .marker { width: 24px; height: 24px; font-size: 11px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">pokeemerald-64</p>
+    <h1>Emerald64 Cartridge Builder</h1>
+    <p class="lede">Turn your own copy of <b>Pokémon Emerald (USA)</b> into a Nintendo&nbsp;64 ROM that boots on an EverDrive&nbsp;64, SC64, or an N64 emulator. Drop the <b>.gba</b> in, get a <b>.z64</b> back.</p>
+    <p class="privacy">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 1.5 13.5 4v4c0 3.2-2.3 5.7-5.5 6.5C4.8 13.7 2.5 11.2 2.5 8V4L8 1.5Z"/><path d="M5.8 8.1 7.3 9.6l3-3.2"/></svg>
+      Runs entirely in your browser — the ROM is never uploaded
+    </p>
+  </header>
+
+  <main class="pipeline">
+
+    <!-- 1 ------------------------------------------------------------ -->
+    <section class="stage" id="s1" data-state="active">
+      <div class="marker" id="m1">1</div>
+      <div class="stage-body">
+        <div class="stage-head">
+          <h2>Your Emerald cartridge dump</h2>
+          <span class="pill idle" id="p1">Waiting</span>
+        </div>
+        <p class="stage-note">The unmodified US retail ROM, 16&nbsp;MB, exactly as dumped. This page checks it against the known-good hash before it does anything.</p>
+
+        <button type="button" class="drop" id="romDrop">
+          <span class="drop-main">Drop pokeemerald.gba here, or click to choose</span>
+          <span class="drop-sub">16,777,216 bytes · sha1 f3ae0881…</span>
+        </button>
+        <input type="file" id="romInput" accept=".gba,.bin" hidden>
+
+        <div class="readout" id="romOut" hidden>
+          <div class="row"><span class="key">File</span><span class="val" id="romName">—</span></div>
+          <div class="row"><span class="key">Size</span><span class="val" id="romSize">—</span></div>
+          <div class="row"><span class="key">Header</span><span class="val" id="romHeader">—</span></div>
+          <div class="row"><span class="key">SHA-1</span><span class="val" id="romSha">—</span></div>
+        </div>
+        <p class="msg bad" id="romMsg" hidden></p>
+      </div>
+    </section>
+
+    <!-- 2 ------------------------------------------------------------ -->
+    <section class="stage" id="s2" data-state="idle">
+      <div class="marker" id="m2">2</div>
+      <div class="stage-body">
+        <div class="stage-head">
+          <h2>Conversion patch</h2>
+          <span class="pill idle" id="p2">Checking</span>
+        </div>
+        <p class="stage-note" id="patchNote">Looking for the bundled patch…</p>
+
+        <button type="button" class="drop compact" id="bpsDrop" hidden>
+          <span class="drop-main">Drop pokeemerald64.bps here, or click to choose</span>
+          <span class="drop-sub">built with tools/make_bps.py</span>
+        </button>
+        <input type="file" id="bpsInput" accept=".bps" hidden>
+
+        <div class="readout" id="bpsOut" hidden>
+          <div class="row"><span class="key">Patch</span><span class="val" id="bpsName">—</span></div>
+          <div class="row"><span class="key">Size</span><span class="val" id="bpsSize">—</span></div>
+          <div class="row"><span class="key">Builds</span><span class="val" id="bpsTarget">—</span></div>
+        </div>
+        <p class="msg bad" id="bpsMsg" hidden></p>
+      </div>
+    </section>
+
+    <!-- 3 ------------------------------------------------------------ -->
+    <section class="stage" id="s3" data-state="idle">
+      <div class="marker" id="m3">3</div>
+      <div class="stage-body">
+        <div class="stage-head">
+          <h2>Nintendo 64 ROM</h2>
+          <span class="pill idle" id="p3">Not ready</span>
+        </div>
+        <p class="stage-note">Every byte is checksummed on the way out, so a ROM that builds here is a ROM that will boot.</p>
+
+        <div class="actions">
+          <button type="button" class="btn" id="goBtn" disabled>Build the .z64</button>
+        </div>
+        <div class="bar" id="bar" hidden><i id="barFill"></i></div>
+
+        <div class="readout" id="outOut" hidden>
+          <div class="row"><span class="key">File</span><span class="val" id="outName">—</span></div>
+          <div class="row"><span class="key">Size</span><span class="val" id="outSize">—</span></div>
+          <div class="row"><span class="key">CRC-32</span><span class="val ok" id="outCrc">—</span></div>
+        </div>
+        <p class="msg" id="outMsg" hidden></p>
+        <div class="actions" id="saveActions" hidden>
+          <button type="button" class="btn" id="saveBtn">Save the ROM</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <h3>What this actually does</h3>
+    <p>The N64 build is a recompilation of the <a href="https://github.com/pret/pokeemerald" style="color:var(--accent)">pokeemerald</a> decompilation, not a modified GBA binary — its code is MIPS, its pointers and script operands are big-endian. What it shares with your cartridge is the bulk asset data: compressed graphics, tilesets, palettes, map blocks and text are embedded byte-for-byte identically in both. The patch reuses those from your ROM and carries the rest.</p>
+    <p>Emerald64 renders the GBA's four tile layers and 128 sprites in software on the VR4300, so it needs no RSP microcode and runs on real hardware from a flash cart. Save data goes to FlashRAM, like the N64 carts that shipped with it.</p>
+
+    <h3>Reference</h3>
+    <div class="readout">
+      <div class="row"><span class="key">Wants</span><span class="val">Pokémon Emerald (USA) · game code BPEE</span></div>
+      <div class="row"><span class="key">Size</span><span class="val">16,777,216 bytes</span></div>
+      <div class="row"><span class="key">SHA-1</span><span class="val">f3ae088181bf583e55daf962a92bb46f4f1d07b7</span></div>
+      <div class="row"><span class="key">Produces</span><span class="val">pokeemerald64.z64 · big-endian N64 ROM</span></div>
+    </div>
+    <p>Ruby, Sapphire, FireRed, LeafGreen and the non-US Emerald releases are different games with different data — the patch will refuse them by name rather than build a broken ROM.</p>
+  </footer>
+
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  /* ---------------- CRC-32 ---------------- */
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function crc32(bytes) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  const hex8 = n => n.toString(16).toUpperCase().padStart(8, "0");
+  const commas = n => n.toLocaleString("en-US");
+
+  async function sha1Hex(bytes) {
+    const d = await crypto.subtle.digest("SHA-1", bytes);
+    return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  /* ---------------- BPS ---------------- */
+  const SOURCE_READ = 0, TARGET_READ = 1, SOURCE_COPY = 2, TARGET_COPY = 3;
+
+  function readVarint(patch, state) {
+    let value = 0, shift = 1;
+    for (;;) {
+      const x = patch[state.pos++];
+      value += (x & 0x7F) * shift;
+      if (x & 0x80) return value;
+      shift *= 128;
+      value += shift;
+    }
+  }
+
+  /** Read just the header, so we can describe a patch before applying it. */
+  function readBpsHeader(patch) {
+    if (patch.length < 20 ||
+        patch[0] !== 0x42 || patch[1] !== 0x50 || patch[2] !== 0x53 || patch[3] !== 0x31) {
+      throw new Error("That file is not a BPS patch.");
+    }
+    const dv = new DataView(patch.buffer, patch.byteOffset, patch.byteLength);
+    if (crc32(patch.subarray(0, patch.length - 4)) !== dv.getUint32(patch.length - 4, true)) {
+      throw new Error("The patch file is damaged — its own checksum does not match.");
+    }
+    const st = { pos: 4 };
+    const sourceSize = readVarint(patch, st);
+    const targetSize = readVarint(patch, st);
+    const metaSize = readVarint(patch, st);
+    st.pos += metaSize;
+    return {
+      sourceSize, targetSize,
+      actionsStart: st.pos,
+      sourceCrc: dv.getUint32(patch.length - 12, true),
+      targetCrc: dv.getUint32(patch.length - 8, true),
+    };
+  }
+
+  function applyBps(patch, source, head, onProgress) {
+    const target = new Uint8Array(head.targetSize);
+    const st = { pos: head.actionsStart };
+    const end = patch.length - 12;
+    let outPos = 0, srcRel = 0, tgtRel = 0, tick = 0;
+
+    while (st.pos < end) {
+      const data = readVarint(patch, st);
+      const action = data & 3;
+      const length = (data >>> 2) + 1;
+
+      if (action === SOURCE_READ) {
+        target.set(source.subarray(outPos, outPos + length), outPos);
+        outPos += length;
+      } else if (action === TARGET_READ) {
+        target.set(patch.subarray(st.pos, st.pos + length), outPos);
+        st.pos += length;
+        outPos += length;
+      } else if (action === SOURCE_COPY) {
+        const raw = readVarint(patch, st);
+        srcRel += (raw & 1) ? -(raw >>> 1) : (raw >>> 1);
+        target.set(source.subarray(srcRel, srcRel + length), outPos);
+        srcRel += length;
+        outPos += length;
+      } else {
+        const raw = readVarint(patch, st);
+        tgtRel += (raw & 1) ? -(raw >>> 1) : (raw >>> 1);
+        // Byte at a time: a TargetCopy is allowed to overlap its own output.
+        for (let i = 0; i < length; i++) target[outPos++] = target[tgtRel++];
+      }
+
+      if (onProgress && ++tick % 4096 === 0) onProgress(outPos / head.targetSize);
+    }
+
+    if (outPos !== head.targetSize) throw new Error("The patch ended early — it may be truncated.");
+    if (crc32(target) !== head.targetCrc) throw new Error("The rebuilt ROM failed its checksum.");
+    return target;
+  }
+
+  /* ---------------- ZIP (the download allowlist takes .zip, not .z64) ------- */
+  async function makeZip(name, bytes) {
+    const nameBytes = new TextEncoder().encode(name);
+    const crc = crc32(bytes);
+    let body = bytes, method = 0;
+
+    if (typeof CompressionStream === "function") {
+      try {
+        const cs = new CompressionStream("deflate-raw");
+        const packed = new Response(new Blob([bytes]).stream().pipeThrough(cs));
+        body = new Uint8Array(await packed.arrayBuffer());
+        method = 8;
+      } catch { body = bytes; method = 0; }
+    }
+
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034B50, true);
+    local.setUint16(4, 20, true);          // version needed
+    local.setUint16(6, 0x0800, true);      // UTF-8 name
+    local.setUint16(8, method, true);
+    local.setUint16(10, 0, true);          // mod time
+    local.setUint16(12, 0x2100, true);     // mod date (2016-08-01, fixed)
+    local.setUint32(14, crc, true);
+    local.setUint32(18, body.length, true);
+    local.setUint32(22, bytes.length, true);
+    local.setUint16(26, nameBytes.length, true);
+    local.setUint16(28, 0, true);
+
+    const central = new DataView(new ArrayBuffer(46));
+    central.setUint32(0, 0x02014B50, true);
+    central.setUint16(4, 20, true);        // version made by
+    central.setUint16(6, 20, true);
+    central.setUint16(8, 0x0800, true);
+    central.setUint16(10, method, true);
+    central.setUint16(12, 0, true);
+    central.setUint16(14, 0x2100, true);
+    central.setUint32(16, crc, true);
+    central.setUint32(20, body.length, true);
+    central.setUint32(24, bytes.length, true);
+    central.setUint16(28, nameBytes.length, true);
+    central.setUint32(42, 0, true);        // offset of local header
+
+    const centralOffset = 30 + nameBytes.length + body.length;
+    const eocd = new DataView(new ArrayBuffer(22));
+    eocd.setUint32(0, 0x06054B50, true);
+    eocd.setUint16(8, 1, true);
+    eocd.setUint16(10, 1, true);
+    eocd.setUint32(12, 46 + nameBytes.length, true);
+    eocd.setUint32(16, centralOffset, true);
+
+    return new Blob([local, nameBytes, body, central, nameBytes, eocd],
+                    { type: "application/zip" });
+  }
+
+  /* ---------------- GBA header sniffing ---------------- */
+  const KNOWN = {
+    BPEE: "Pokémon Emerald", AXVE: "Pokémon Ruby", AXPE: "Pokémon Sapphire",
+    BPRE: "Pokémon FireRed", BPGE: "Pokémon LeafGreen",
+  };
+
+  function describeGba(bytes) {
+    if (bytes.length < 0xB0) return null;
+    const ascii = (o, n) => String.fromCharCode(...bytes.subarray(o, o + n))
+                                  .replace(/\0+$/, "").trim();
+    const code = ascii(0xAC, 4);
+    return { title: ascii(0xA0, 12), code, game: KNOWN[code] || null,
+             region: code.charAt(3) };
+  }
+
+  /* ---------------- UI plumbing ---------------- */
+  const $ = id => document.getElementById(id);
+  const EXPECT_SHA = "f3ae088181bf583e55daf962a92bb46f4f1d07b7";
+  const EXPECT_SIZE = 16777216;
+
+  const state = { rom: null, romOk: false, patch: null, head: null, out: null };
+
+  function setStage(n, s) { $("s" + n).dataset.state = s; }
+  function setPill(n, cls, text) {
+    const el = $("p" + n);
+    el.className = "pill " + cls;
+    el.textContent = text;
+  }
+  function say(el, text, cls) {
+    const node = $(el);
+    node.hidden = !text;
+    node.textContent = text || "";
+    node.className = "msg" + (cls ? " " + cls : "");
+  }
+
+  function wireDrop(dropId, inputId, handler) {
+    const drop = $(dropId), input = $(inputId);
+    drop.addEventListener("click", () => input.click());
+    input.addEventListener("change", () => {
+      if (input.files[0]) handler(input.files[0]);
+      input.value = "";
+    });
+    ["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => {
+      e.preventDefault(); drop.classList.add("over");
+    }));
+    ["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => {
+      e.preventDefault(); drop.classList.remove("over");
+    }));
+    drop.addEventListener("drop", e => {
+      const f = e.dataTransfer?.files?.[0];
+      if (f) handler(f);
+    });
+  }
+
+  /* ---------------- stage 1: the GBA ROM ---------------- */
+  async function loadRom(file) {
+    say("romMsg", "");
+    setPill(1, "work", "Checking");
+    setStage(1, "active");
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const info = describeGba(bytes);
+    const sha = await sha1Hex(bytes);
+
+    $("romOut").hidden = false;
+    $("romName").textContent = file.name;
+    $("romSize").textContent = commas(bytes.length) + " bytes";
+    $("romHeader").textContent = info
+      ? `${info.title || "—"} · ${info.code || "????"}`
+      : "unreadable";
+    $("romSha").textContent = sha;
+
+    state.rom = bytes;
+    state.romOk = sha === EXPECT_SHA;
+
+    $("romSha").className = "val " + (state.romOk ? "ok" : "bad");
+    $("romSize").className = "val " + (bytes.length === EXPECT_SIZE ? "" : "bad");
+
+    if (state.romOk) {
+      setPill(1, "good", "Verified");
+      setStage(1, "done");
+    } else {
+      setPill(1, "fail", "Not a match");
+      setStage(1, "error");
+      say("romMsg", diagnose(bytes, info), "bad");
+    }
+    refresh();
+  }
+
+  function diagnose(bytes, info) {
+    if (bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4B)
+      return "That is a .zip. Extract the .gba inside it and drop that instead.";
+    if (info && info.game && info.code !== "BPEE")
+      return `That is ${info.game} (${info.code}). This patch is built for Pokémon Emerald.`;
+    if (info && info.code === "BPEE")
+      return "That is Emerald, but not the US release this patch was built from. " +
+             "Only the USA ROM has the right data at the right offsets.";
+    if (bytes.length !== EXPECT_SIZE)
+      return `A retail Emerald ROM is ${commas(EXPECT_SIZE)} bytes; this one is ` +
+             `${commas(bytes.length)}. It may be trimmed, padded, or not a GBA ROM.`;
+    return "The bytes do not match a retail Emerald (USA) ROM. If it has been " +
+           "patched or byte-swapped, start again from a clean dump.";
+  }
+
+  /* ---------------- stage 2: the patch ---------------- */
+  function adoptPatch(bytes, label) {
+    const head = readBpsHeader(bytes);   // throws on a bad patch
+    state.patch = bytes;
+    state.head = head;
+
+    $("bpsOut").hidden = false;
+    $("bpsName").textContent = label;
+    $("bpsSize").textContent = commas(bytes.length) + " bytes";
+    $("bpsTarget").textContent = commas(head.targetSize) + " bytes · crc " + hex8(head.targetCrc);
+    $("patchNote").textContent =
+      "This patch reuses the graphics, maps and text already on your cartridge and " +
+      "supplies the recompiled N64 code around them.";
+    $("bpsDrop").hidden = true;
+    setPill(2, "good", "Ready");
+    setStage(2, "done");
+    say("bpsMsg", "");
+    refresh();
+  }
+
+  async function loadPatchFile(file) {
+    say("bpsMsg", "");
+    try {
+      adoptPatch(new Uint8Array(await file.arrayBuffer()), file.name);
+    } catch (e) {
+      setPill(2, "fail", "Unusable");
+      setStage(2, "error");
+      say("bpsMsg", e.message, "bad");
+    }
+  }
+
+  async function findBundledPatch() {
+    try {
+      const res = await fetch("pokeemerald64.bps", { cache: "no-store" });
+      if (!res.ok) throw new Error("not bundled");
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      adoptPatch(bytes, "pokeemerald64.bps (bundled)");
+    } catch {
+      setPill(2, "idle", "Needed");
+      setStage(2, "active");
+      $("bpsDrop").hidden = false;
+      $("patchNote").textContent =
+        "No patch is bundled with this page yet. Build one from a ROM you own with " +
+        "tools/make_bps.py in the repo, then drop the .bps here.";
+    }
+  }
+
+  /* ---------------- stage 3: build ---------------- */
+  function refresh() {
+    const ready = state.romOk && state.patch;
+    $("goBtn").disabled = !ready;
+    if (state.out) return;
+    if (ready) { setPill(3, "idle", "Ready"); setStage(3, "active"); }
+    else { setPill(3, "idle", "Not ready"); setStage(3, "idle"); }
+  }
+
+  async function build() {
+    $("goBtn").disabled = true;
+    $("saveActions").hidden = true;
+    $("outOut").hidden = true;
+    say("outMsg", "");
+    setPill(3, "work", "Building");
+    setStage(3, "active");
+    $("bar").hidden = false;
+    $("barFill").style.width = "0%";
+
+    // Let the bar paint before the synchronous patch run.
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    try {
+      if (state.rom.length !== state.head.sourceSize)
+        throw new Error(`This patch expects a ${commas(state.head.sourceSize)}-byte ` +
+                        `source ROM; yours is ${commas(state.rom.length)}.`);
+      if (crc32(state.rom) !== state.head.sourceCrc)
+        throw new Error("Your ROM is not the one this patch was built from.");
+
+      const out = applyBps(state.patch, state.rom, state.head,
+                           p => { $("barFill").style.width = (p * 100).toFixed(0) + "%"; });
+      $("barFill").style.width = "100%";
+
+      state.out = out;
+      $("outOut").hidden = false;
+      $("outName").textContent = "pokeemerald64.z64";
+      $("outSize").textContent = commas(out.length) + " bytes";
+      $("outCrc").textContent = hex8(crc32(out));
+      setPill(3, "good", "Built");
+      setStage(3, "done");
+      say("outMsg", "Checksum verified against the patch. Copy it to your flash cart's SD card.", "ok");
+      $("saveActions").hidden = false;
+    } catch (e) {
+      setPill(3, "fail", "Failed");
+      setStage(3, "error");
+      $("bar").hidden = true;
+      say("outMsg", e.message, "bad");
+      $("goBtn").disabled = false;
+    }
+  }
+
+  /* ---------------- saving ---------------- */
+  let downloads = null;
+
+  async function save() {
+    if (!state.out) return;
+    const btn = $("saveBtn");
+    btn.disabled = true;
+
+    try {
+      if (downloads) {
+        // The host's allowlist takes .zip but not .z64, so ship the ROM inside one.
+        const zip = await makeZip("pokeemerald64.z64", state.out);
+        await downloads.save({ filename: "pokeemerald64.zip", data: zip });
+        say("outMsg", "Saved. Unzip pokeemerald64.z64 onto your flash cart.", "ok");
+      } else {
+        const url = URL.createObjectURL(new Blob([state.out],
+                                        { type: "application/octet-stream" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "pokeemerald64.z64";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      }
+    } catch (e) {
+      if (e && e.code === "declined") say("outMsg", "Save cancelled — the ROM is still built, try again when ready.", "");
+      else say("outMsg", "Could not save: " + ((e && e.message) || e), "bad");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /* ---------------- boot ---------------- */
+  wireDrop("romDrop", "romInput", loadRom);
+  wireDrop("bpsDrop", "bpsInput", loadPatchFile);
+  $("goBtn").addEventListener("click", build);
+  $("saveBtn").addEventListener("click", save);
+
+  findBundledPatch();
+
+  // The save surface only exists inside the claude.ai viewer; when this page is
+  // self-hosted we fall back to an ordinary download, so nothing waits on it.
+  if (window.claude && typeof window.claude.use === "function") {
+    window.claude.use("downloads").then(d => { downloads = d; }).catch(() => {});
+  }
+})();
+</script>
