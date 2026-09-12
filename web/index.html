@@ -114,21 +114,6 @@
 
   .lede b { color: var(--ink); font-weight: 500; }
 
-  .privacy {
-    margin-top: 22px;
-    display: inline-flex;
-    align-items: center;
-    gap: 9px;
-    padding: 7px 13px 7px 11px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: var(--surface);
-    font-size: 13px;
-    color: var(--ink-mid);
-  }
-
-  .privacy svg { flex: none; color: var(--ok); }
-
   /* ---------- pipeline ---------- */
 
   .pipeline { display: flex; flex-direction: column; }
@@ -233,10 +218,14 @@
   .drop.over { border-color: var(--accent); background: var(--accent-soft); border-style: solid; }
   .drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-  .drop-main { font-weight: 500; font-size: 14.5px; }
-  .drop-sub  { color: var(--ink-dim); font-size: 12.5px; margin-top: 5px; font-family: var(--mono); }
-
-  .drop.compact { padding: 15px 18px; text-align: left; }
+  .drop-main { display: block; font-weight: 500; font-size: 14.5px; }
+  .drop-sub  {
+    display: block;
+    color: var(--ink-dim);
+    font-size: 12.5px;
+    margin-top: 5px;
+    font-family: var(--mono);
+  }
 
   /* ---------- data readout ---------- */
 
@@ -361,10 +350,6 @@
     <p class="eyebrow">pokeemerald-64</p>
     <h1>Emerald64 Cartridge Builder</h1>
     <p class="lede">Turn your own copy of <b>Pokémon Emerald (USA)</b> into a Nintendo&nbsp;64 ROM that boots on an EverDrive&nbsp;64, SC64, or an N64 emulator. Drop the <b>.gba</b> in, get a <b>.z64</b> back.</p>
-    <p class="privacy">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 1.5 13.5 4v4c0 3.2-2.3 5.7-5.5 6.5C4.8 13.7 2.5 11.2 2.5 8V4L8 1.5Z"/><path d="M5.8 8.1 7.3 9.6l3-3.2"/></svg>
-      Runs entirely in your browser — the ROM is never uploaded
-    </p>
   </header>
 
   <main class="pipeline">
@@ -400,33 +385,8 @@
       <div class="marker" id="m2">2</div>
       <div class="stage-body">
         <div class="stage-head">
-          <h2>Conversion patch</h2>
-          <span class="pill idle" id="p2">Checking</span>
-        </div>
-        <p class="stage-note" id="patchNote">Looking for the bundled patch…</p>
-
-        <button type="button" class="drop compact" id="bpsDrop" hidden>
-          <span class="drop-main">Drop pokeemerald64.bps here, or click to choose</span>
-          <span class="drop-sub">built with tools/make_bps.py · .bps or .bps.gz</span>
-        </button>
-        <input type="file" id="bpsInput" accept=".bps,.gz" hidden>
-
-        <div class="readout" id="bpsOut" hidden>
-          <div class="row"><span class="key">Patch</span><span class="val" id="bpsName">—</span></div>
-          <div class="row"><span class="key">Size</span><span class="val" id="bpsSize">—</span></div>
-          <div class="row"><span class="key">Builds</span><span class="val" id="bpsTarget">—</span></div>
-        </div>
-        <p class="msg bad" id="bpsMsg" hidden></p>
-      </div>
-    </section>
-
-    <!-- 3 ------------------------------------------------------------ -->
-    <section class="stage" id="s3" data-state="idle">
-      <div class="marker" id="m3">3</div>
-      <div class="stage-body">
-        <div class="stage-head">
           <h2>Nintendo 64 ROM</h2>
-          <span class="pill idle" id="p3">Not ready</span>
+          <span class="pill idle" id="p2">Not ready</span>
         </div>
         <p class="stage-note">Every byte is checksummed on the way out, so a ROM that builds here is a ROM that will boot.</p>
 
@@ -450,18 +410,14 @@
   </main>
 
   <footer>
-    <h3>What this actually does</h3>
-    <p>The N64 build is a recompilation of the <a href="https://github.com/pret/pokeemerald" style="color:var(--accent)">pokeemerald</a> decompilation, not a modified GBA binary — its code is MIPS, its pointers and script operands are big-endian. What it shares with your cartridge is the bulk asset data: compressed graphics, tilesets, palettes, map blocks and text are embedded byte-for-byte identically in both. The patch reuses those from your ROM and carries the rest.</p>
-    <p>Emerald64 renders the GBA's four tile layers and 128 sprites in software on the VR4300, so it needs no RSP microcode and runs on real hardware from a flash cart. Save data goes to FlashRAM, like the N64 carts that shipped with it.</p>
-
-    <h3>Reference</h3>
+    <h3>The ROM it expects</h3>
     <div class="readout">
-      <div class="row"><span class="key">Wants</span><span class="val">Pokémon Emerald (USA) · game code BPEE</span></div>
+      <div class="row"><span class="key">Game</span><span class="val">Pokémon Emerald (USA) · BPEE</span></div>
       <div class="row"><span class="key">Size</span><span class="val">16,777,216 bytes</span></div>
       <div class="row"><span class="key">SHA-1</span><span class="val">f3ae088181bf583e55daf962a92bb46f4f1d07b7</span></div>
       <div class="row"><span class="key">Produces</span><span class="val">pokeemerald64.z64 · big-endian N64 ROM</span></div>
     </div>
-    <p>Ruby, Sapphire, FireRed, LeafGreen and the non-US Emerald releases are different games with different data — the patch will refuse them by name rather than build a broken ROM.</p>
+    <p>Ruby, Sapphire, FireRed, LeafGreen and the non-US Emerald releases are different games with different data — those get refused by name rather than built into a broken ROM.</p>
   </footer>
 
 </div>
@@ -645,7 +601,8 @@
   const EXPECT_SHA = "f3ae088181bf583e55daf962a92bb46f4f1d07b7";
   const EXPECT_SIZE = 16777216;
 
-  const state = { rom: null, romOk: false, patch: null, head: null, out: null };
+  const state = { rom: null, romOk: false, patch: null, head: null, out: null,
+                  dataMissing: false };
 
   function setStage(n, s) { $("s" + n).dataset.state = s; }
   function setPill(n, cls, text) {
@@ -729,25 +686,7 @@
            "patched or byte-swapped, start again from a clean dump.";
   }
 
-  /* ---------------- stage 2: the patch ---------------- */
-  function adoptPatch(bytes, label) {
-    const head = readBpsHeader(bytes);   // throws on a bad patch
-    state.patch = bytes;
-    state.head = head;
-
-    $("bpsOut").hidden = false;
-    $("bpsName").textContent = label;
-    $("bpsSize").textContent = commas(bytes.length) + " bytes";
-    $("bpsTarget").textContent = commas(head.targetSize) + " bytes · crc " + hex8(head.targetCrc);
-    $("patchNote").textContent =
-      "This patch reuses the graphics, maps and text already on your cartridge and " +
-      "supplies the recompiled N64 code around them.";
-    $("bpsDrop").hidden = true;
-    setPill(2, "good", "Ready");
-    setStage(2, "done");
-    say("bpsMsg", "");
-    refresh();
-  }
+  /* ---------------- conversion data (no UI of its own) ---------------- */
 
   /** Patches are often shipped gzipped — what they carry is mostly MIPS code,
    *  which compresses to about 40%. Inflate those transparently. */
@@ -761,17 +700,6 @@
     return new Uint8Array(await new Response(stream).arrayBuffer());
   }
 
-  async function loadPatchFile(file) {
-    say("bpsMsg", "");
-    try {
-      adoptPatch(await maybeGunzip(new Uint8Array(await file.arrayBuffer())), file.name);
-    } catch (e) {
-      setPill(2, "fail", "Unusable");
-      setStage(2, "error");
-      say("bpsMsg", e.message, "bad");
-    }
-  }
-
   function base64ToBytes(b64) {
     const bin = atob(b64);
     const out = new Uint8Array(bin.length);
@@ -779,7 +707,9 @@
     return out;
   }
 
-  async function findBundledPatch() {
+  /** Load the conversion data that ships with the page. Silent on success —
+   *  it is not something the person converting a ROM has to think about. */
+  async function loadConversionData() {
     // .bps.json last: some static hosts (the claude.ai artifact host among
     // them) only serve standard web media types, so the patch travels as
     // base64 in JSON there. A plain .bps is preferred wherever it is served.
@@ -791,25 +721,32 @@
         const raw = name.endsWith(".json")
           ? base64ToBytes((await res.json()).data)
           : new Uint8Array(await res.arrayBuffer());
-        adoptPatch(await maybeGunzip(raw), "bundled with this page");
+        const bytes = await maybeGunzip(raw);
+        state.head = readBpsHeader(bytes);   // throws on a damaged patch
+        state.patch = bytes;
+        refresh();
         return;
       } catch { /* try the next name */ }
     }
-    setPill(2, "idle", "Needed");
-    setStage(2, "active");
-    $("bpsDrop").hidden = false;
-    $("patchNote").textContent =
-      "No patch is bundled with this page yet. Build one from a ROM you own with " +
-      "tools/make_bps.py in the repo, then drop the .bps here.";
+    state.dataMissing = true;
+    refresh();
   }
 
-  /* ---------------- stage 3: build ---------------- */
+  /* ---------------- stage 2: build ---------------- */
   function refresh() {
     const ready = state.romOk && state.patch;
     $("goBtn").disabled = !ready;
     if (state.out) return;
-    if (ready) { setPill(3, "idle", "Ready"); setStage(3, "active"); }
-    else { setPill(3, "idle", "Not ready"); setStage(3, "idle"); }
+
+    if (state.dataMissing) {
+      setPill(2, "fail", "Unavailable");
+      setStage(2, "error");
+      say("outMsg", "This copy of the page is missing its conversion data, so it " +
+                    "cannot build a ROM. Rebuild it with tools/make_bps.py.", "bad");
+      return;
+    }
+    if (ready) { setPill(2, "idle", "Ready"); setStage(2, "active"); }
+    else { setPill(2, "idle", "Not ready"); setStage(2, "idle"); }
   }
 
   async function build() {
@@ -817,8 +754,8 @@
     $("saveActions").hidden = true;
     $("outOut").hidden = true;
     say("outMsg", "");
-    setPill(3, "work", "Building");
-    setStage(3, "active");
+    setPill(2, "work", "Building");
+    setStage(2, "active");
     $("bar").hidden = false;
     $("barFill").style.width = "0%";
 
@@ -826,11 +763,9 @@
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     try {
-      if (state.rom.length !== state.head.sourceSize)
-        throw new Error(`This patch expects a ${commas(state.head.sourceSize)}-byte ` +
-                        `source ROM; yours is ${commas(state.rom.length)}.`);
-      if (crc32(state.rom) !== state.head.sourceCrc)
-        throw new Error("Your ROM is not the one this patch was built from.");
+      if (state.rom.length !== state.head.sourceSize ||
+          crc32(state.rom) !== state.head.sourceCrc)
+        throw new Error("That ROM is not the retail Emerald (USA) this was built for.");
 
       const out = applyBps(state.patch, state.rom, state.head,
                            p => { $("barFill").style.width = (p * 100).toFixed(0) + "%"; });
@@ -841,13 +776,13 @@
       $("outName").textContent = "pokeemerald64.z64";
       $("outSize").textContent = commas(out.length) + " bytes";
       $("outCrc").textContent = hex8(crc32(out));
-      setPill(3, "good", "Built");
-      setStage(3, "done");
-      say("outMsg", "Checksum verified against the patch. Copy it to your flash cart's SD card.", "ok");
+      setPill(2, "good", "Built");
+      setStage(2, "done");
+      say("outMsg", "Checksum verified. Copy it to your flash cart's SD card.", "ok");
       $("saveActions").hidden = false;
     } catch (e) {
-      setPill(3, "fail", "Failed");
-      setStage(3, "error");
+      setPill(2, "fail", "Failed");
+      setStage(2, "error");
       $("bar").hidden = true;
       say("outMsg", e.message, "bad");
       $("goBtn").disabled = false;
@@ -889,11 +824,10 @@
 
   /* ---------------- boot ---------------- */
   wireDrop("romDrop", "romInput", loadRom);
-  wireDrop("bpsDrop", "bpsInput", loadPatchFile);
   $("goBtn").addEventListener("click", build);
   $("saveBtn").addEventListener("click", save);
 
-  findBundledPatch();
+  loadConversionData();
 
   // The save surface only exists inside the claude.ai viewer; when this page is
   // self-hosted we fall back to an ordinary download, so nothing waits on it.
