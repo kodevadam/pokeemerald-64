@@ -772,13 +772,26 @@
     }
   }
 
+  function base64ToBytes(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
   async function findBundledPatch() {
-    for (const name of ["pokeemerald64.bps.gz", "pokeemerald64.bps"]) {
+    // .bps.json last: some static hosts (the claude.ai artifact host among
+    // them) only serve standard web media types, so the patch travels as
+    // base64 in JSON there. A plain .bps is preferred wherever it is served.
+    for (const name of ["pokeemerald64.bps.gz", "pokeemerald64.bps",
+                        "pokeemerald64.bps.json"]) {
       try {
         const res = await fetch(name, { cache: "no-store" });
         if (!res.ok) continue;
-        const raw = new Uint8Array(await res.arrayBuffer());
-        adoptPatch(await maybeGunzip(raw), name + " (bundled)");
+        const raw = name.endsWith(".json")
+          ? base64ToBytes((await res.json()).data)
+          : new Uint8Array(await res.arrayBuffer());
+        adoptPatch(await maybeGunzip(raw), "bundled with this page");
         return;
       } catch { /* try the next name */ }
     }

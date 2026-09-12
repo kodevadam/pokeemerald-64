@@ -44,4 +44,6 @@ prefabs.json
 
 # ROM-derived conversion patch: build it locally with tools/make_bps.py
 web/*.bps
+web/*.bps.gz
+web/*.bps.json
 tools/__pycache__/

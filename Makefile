@@ -193,11 +193,16 @@ ifeq ($(SETUP_PREREQS),1)
 endif
 
 # Collect sources
+# src/n64/ is the N64 port's platform layer -- MIPS assembly and C99 that agbcc
+# cannot parse. It replaces the GBA HAL rather than adding to it, so it must
+# stay out of this target entirely; Makefile.n64 builds it instead.
 C_SRCS_IN := $(wildcard $(C_SUBDIR)/*.c $(C_SUBDIR)/*/*.c $(C_SUBDIR)/*/*/*.c)
+C_SRCS_IN := $(filter-out $(C_SUBDIR)/n64/%,$(C_SRCS_IN))
 C_SRCS := $(foreach src,$(C_SRCS_IN),$(if $(findstring .inc.c,$(src)),,$(src)))
 C_OBJS := $(patsubst $(C_SUBDIR)/%.c,$(C_BUILDDIR)/%.o,$(C_SRCS))
 
 C_ASM_SRCS := $(wildcard $(C_SUBDIR)/*.s $(C_SUBDIR)/*/*.s $(C_SUBDIR)/*/*/*.s)
+C_ASM_SRCS := $(filter-out $(C_SUBDIR)/n64/%,$(C_ASM_SRCS))
 C_ASM_OBJS := $(patsubst $(C_SUBDIR)/%.s,$(C_BUILDDIR)/%.o,$(C_ASM_SRCS))
 
 ASM_SRCS := $(wildcard $(ASM_SUBDIR)/*.s)

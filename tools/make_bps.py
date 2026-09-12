@@ -314,6 +314,11 @@ def main():
                     help="gzip the patch (the web patcher inflates it transparently). "
                          "Worth it: what the patch carries is mostly MIPS code, which "
                          "compresses to around 40%%.")
+    ap.add_argument("--json", action="store_true",
+                    help="also write a base64-in-JSON copy beside the patch. Static "
+                         "hosts that only serve standard web media types (the claude.ai "
+                         "artifact host among them) will not serve a raw .bps; the web "
+                         "patcher falls back to this. Costs 33%% over the raw bytes.")
     ap.add_argument("--verify", action="store_true", default=True,
                     help="apply the patch back and check it reproduces the target")
     ap.add_argument("--no-verify", dest="verify", action="store_false")
@@ -367,6 +372,23 @@ def main():
               f"({human(len(patch))} uncompressed)")
     else:
         print(f"wrote  {out_path}  {human(len(patch))}")
+
+    if args.json:
+        import base64, json
+        json_path = args.output
+        for suffix in (".bps.gz", ".bps"):
+            if json_path.endswith(suffix):
+                json_path = json_path[:-len(suffix)]
+                break
+        json_path += ".bps.json"
+        wrapper = {
+            "format": "bps+gzip+base64" if args.gzip else "bps+base64",
+            "targetName": "pokeemerald64.z64",
+            "data": base64.b64encode(blob).decode("ascii"),
+        }
+        with open(json_path, "w") as f:
+            json.dump(wrapper, f)
+        print(f"wrote  {json_path}  {human(os.path.getsize(json_path))}")
 
     if args.stats:
         total = len(target)
